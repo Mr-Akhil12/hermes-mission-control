@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "name": "hermes-mission-control",
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install"
+}
