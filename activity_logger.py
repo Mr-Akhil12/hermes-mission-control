@@ -11,6 +11,7 @@ import time
 import json
 import subprocess
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -29,7 +30,8 @@ last_cron_count = 0
 last_run_times = {}
 
 
-def supabase_insert(table: str, data: dict) -> bool:
+def supabase_upsert(table: str, data: dict, on_conflict: str = "id") -> bool:
+    """Upsert a row into Supabase using the REST API."""
     if not SUPABASE_KEY:
         return False
     try:
@@ -39,12 +41,46 @@ def supabase_insert(table: str, data: dict) -> bool:
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json",
-            "Prefer": "return=minimal",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
         }, method="POST")
+        # Add upsert query parameter
+        full_url = url + f"?on_conflict={on_conflict}"
+        req = urllib.request.Request(full_url, data=payload, headers=req.headers, method=req.method)
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.status in (200, 201)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            # Conflict - try UPDATE instead
+            return supabase_update(table, data, on_conflict)
+        print(f"[ERROR] Supabase upsert HTTP {e.code}: {e.read().decode()[:200]}")
+        return False
     except Exception as e:
-        print(f"[ERROR] Supabase insert: {e}")
+        print(f"[ERROR] Supabase upsert: {e}")
+        return False
+
+
+def supabase_update(table: str, data: dict, on_conflict: str = "id") -> bool:
+    """Update a row in Supabase (fallback for conflicts)."""
+    if not SUPABASE_KEY:
+        return False
+    try:
+        # Find the conflict column value
+        conflict_val = data.get(on_conflict)
+        if not conflict_val:
+            return False
+            
+        url = f"{SUPABASE_URL}/rest/v1/{table}?{on_conflict}=eq.{urllib.parse.quote(str(conflict_val))}"
+        payload = json.dumps(data).encode()
+        req = urllib.request.Request(url, data=payload, headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }, method="PATCH")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status in (200, 204)
+    except Exception as e:
+        print(f"[ERROR] Supabase update: {e}")
         return False
 
 
@@ -81,7 +117,7 @@ def sync_sessions():
         
         for row in rows:
             if len(row) >= 6:
-                supabase_insert("sessions", {
+                supabase_upsert("sessions", {
                     "id": row[0],
                     "title": row[1] or None,
                     "source": row[2] or "local",
@@ -107,7 +143,7 @@ def sync_sessions():
             session_id = row[0]
             started_at = row[5]
             if session_id not in last_run_times:
-                supabase_insert("agent_activities", {
+                supabase_upsert("agent_activities", {
                     "agent_name": row[2] or "local",
                     "action": "session_active",
                     "details": f"Session '{row[1] or session_id}' — {row[4]} messages via {row[3]}",
@@ -136,7 +172,7 @@ def sync_cron_jobs():
                 job_id = job.get("id", "")
                 last_run = job.get("last_run_at")
                 
-                supabase_insert("cron_jobs", {
+                supabase_upsert("cron_jobs", {
                     "id": job_id,
                     "name": job.get("name"),
                     "schedule": str(job.get("schedule", "")),
@@ -154,7 +190,7 @@ def sync_cron_jobs():
                 
                 # Log cron runs as activities
                 if last_run and job_id not in last_run_times:
-                    supabase_insert("agent_activities", {
+                    supabase_upsert("agent_activities", {
                         "agent_name": "cron",
                         "action": "job_executed",
                         "details": f"Cron job '{job.get('name', job_id)}' ran — status: {job.get('last_status', 'ok')}",
@@ -163,7 +199,7 @@ def sync_cron_jobs():
                     })
                     last_run_times[job_id] = last_run
                 elif last_run and last_run_times.get(job_id) != last_run:
-                    supabase_insert("agent_activities", {
+                    supabase_upsert("agent_activities", {
                         "agent_name": "cron",
                         "action": "job_executed",
                         "details": f"Cron job '{job.get('name', job_id)}' ran — status: {job.get('last_status', 'ok')}",
@@ -187,7 +223,7 @@ def main():
     print("📊 Initial sync...")
     sync_sessions()
     sync_cron_jobs()
-    supabase_insert("agent_activities", {
+    supabase_upsert("agent_activities", {
         "agent_name": "system",
         "action": "logger_started",
         "details": "Activity logger initialized and syncing",
@@ -203,7 +239,7 @@ def main():
             
             # Heartbeat every 10 cycles
             if cycle % 10 == 0:
-                supabase_insert("agent_activities", {
+                supabase_upsert("agent_activities", {
                     "agent_name": "system",
                     "action": "logger_heartbeat",
                     "details": f"Logger running — cycle {cycle}",
@@ -214,7 +250,7 @@ def main():
             
             time.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:
-            supabase_insert("agent_activities", {
+            supabase_upsert("agent_activities", {
                 "agent_name": "system",
                 "action": "logger_stopped",
                 "details": "Activity logger shut down",
