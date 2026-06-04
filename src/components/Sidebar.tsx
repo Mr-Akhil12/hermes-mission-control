@@ -31,12 +31,12 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className={`fixed left-0 top-0 h-full z-50 flex-col transition-all duration-300 bg-[#0d0d14] border-r border-[#1e1e2a] hidden md:flex ${collapsed ? 'w-14' : 'w-56'}`}>
-        <div className="flex items-center gap-2 px-4 h-14 flex-shrink-0 border-b border-[#1e1e2a]">
-          <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0">
-            <Zap className="w-4 h-4 text-black" />
+      <aside className={`fixed left-0 top-0 h-full z-50 flex flex-col transition-all duration-300 bg-white border-r border-[#4f8fff1f] hidden md:flex ${collapsed ? 'w-14' : 'w-56'}`}>
+        <div className="flex items-center gap-2 px-4 h-14 flex-shrink-0 border-b border-[#4f8fff1f]">
+          <div className="w-8 h-8 rounded-xl bg-[#4f8fff] flex items-center justify-center flex-shrink-0">
+            <Zap className="w-4 h-4 text-white" />
           </div>
-          {!collapsed && <span className="text-sm font-semibold tracking-tight">Hermes OS</span>}
+          {!collapsed && <span className="text-sm font-bold tracking-tight text-[#1a1a2e]">Hermes OS</span>}
         </div>
 
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
@@ -47,10 +47,10 @@ export default function Sidebar() {
               <Link
                 key={tab.id}
                 href={tab.path}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all ${
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-sm transition-all ${
                   active
-                    ? 'bg-orange-500/10 text-orange-400'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                    ? 'bg-[#4f8fff10] text-[#4f8fff] font-medium'
+                    : 'text-[#8888a0] hover:text-[#4a4a68] hover:bg-[#4f8fff08]'
                 }`}
                 title={collapsed ? tab.label : undefined}
               >
@@ -61,10 +61,10 @@ export default function Sidebar() {
           })}
         </nav>
 
-        <div className="px-3 pb-3 flex-shrink-0 border-t border-[#1e1e2a]">
+        <div className="px-3 pb-3 flex-shrink-0 border-t border-[#4f8fff1f]">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center justify-center py-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors"
+            className="w-full flex items-center justify-center py-2 rounded-xl text-[#8888a0] hover:text-[#4a4a68] hover:bg-[#4f8fff08] transition-colors"
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
@@ -72,15 +72,15 @@ export default function Sidebar() {
       </aside>
 
       {/* Mobile Top Bar */}
-      <header className="fixed top-0 left-0 right-0 z-40 md:hidden h-14 bg-[#0d0d14] border-b border-[#1e1e2a] flex items-center px-4">
-        <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center mr-3">
-          <Zap className="w-4 h-4 text-black" />
+      <header className="fixed top-0 left-0 right-0 z-40 md:hidden h-14 bg-white border-b border-[#4f8fff1f] flex items-center px-4">
+        <div className="w-8 h-8 rounded-xl bg-[#4f8fff] flex items-center justify-center mr-3">
+          <Zap className="w-4 h-4 text-white" />
         </div>
-        <span className="text-sm font-semibold">Hermes OS</span>
+        <span className="text-sm font-bold text-[#1a1a2e]">Hermes OS</span>
       </header>
 
       {/* Mobile Tab Bar */}
-      <div className="fixed top-14 left-0 right-0 z-30 md:hidden overflow-x-auto bg-[#0d0d14] border-b border-[#1e1e2a]">
+      <div className="fixed top-14 left-0 right-0 z-30 md:hidden overflow-x-auto bg-white border-b border-[#4f8fff1f]">
         <div className="flex items-center gap-1 px-2 py-2 min-w-max">
           {tabs.map((tab) => {
             const Icon = tab.icon
@@ -89,8 +89,8 @@ export default function Sidebar() {
               <Link
                 key={tab.id}
                 href={tab.path}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                  active ? 'bg-orange-500/10 text-orange-400' : 'text-zinc-400 hover:text-zinc-200'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
+                  active ? 'bg-[#4f8fff10] text-[#4f8fff]' : 'text-[#8888a0] hover:text-[#4a4a68]'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
