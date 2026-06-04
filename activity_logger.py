@@ -68,10 +68,10 @@ def sync_sessions():
     
     rows = sqlite_query(STATE_DB, """
         SELECT id, title, source, model, message_count, 
-               COALESCE(last_active, started_at) as last_active,
-               started_at
+               started_at,
+               COALESCE(ended_at, started_at) as last_active
         FROM sessions 
-        ORDER BY last_active DESC 
+        ORDER BY started_at DESC 
         LIMIT 100
     """)
     
@@ -87,25 +87,25 @@ def sync_sessions():
                     "source": row[2] or "local",
                     "model": row[3] or None,
                     "message_count": int(row[4]) if row[4] else 0,
-                    "last_active": row[5] or datetime.now(timezone.utc).isoformat(),
-                    "created_at": row[6] if len(row) > 6 else datetime.now(timezone.utc).isoformat(),
+                    "last_active": datetime.fromtimestamp(float(row[5]), tz=timezone.utc).isoformat() if row[5] else datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.fromtimestamp(float(row[5]), tz=timezone.utc).isoformat() if row[5] else datetime.now(timezone.utc).isoformat(),
                 })
         
         last_session_count = current_count
     
-    # Log new active sessions as activities
-    recent = sqlite_query(STATE_DB, """
-        SELECT id, title, source, model, message_count,
-               COALESCE(last_active, started_at) as last_active
+    # Log new active sessions as activities (sessions started in last 5 minutes)
+    recent = sqlite_query(STATE_DB, f"""
+        SELECT id, title, source, model, message_count, started_at
         FROM sessions 
-        WHERE last_active > datetime('now', '-5 minutes')
-        ORDER BY last_active DESC
+        WHERE started_at > {time.time() - 300}
+        ORDER BY started_at DESC
         LIMIT 10
     """)
     
     for row in recent:
         if len(row) >= 6:
             session_id = row[0]
+            started_at = row[5]
             if session_id not in last_run_times:
                 supabase_insert("agent_activities", {
                     "agent_name": row[2] or "local",
@@ -114,7 +114,7 @@ def sync_sessions():
                     "status": "running",
                     "metadata": {"session_id": session_id, "model": row[3], "messages": int(row[4]) if row[4] else 0},
                 })
-                last_run_times[session_id] = row[5]
+                last_run_times[session_id] = started_at
 
 
 def sync_cron_jobs():
