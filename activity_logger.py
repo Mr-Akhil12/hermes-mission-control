@@ -2,7 +2,7 @@
 """
 Hermes OS — Activity Logger
 Runs as a background service on the VPS, polls Hermes sessions/cron data,
-and logs activities to Supabase in real-time.
+and logs activities to Supabase in real-time. Also triggers n8n workflows.
 """
 
 import os
@@ -12,12 +12,14 @@ import json
 import subprocess
 import urllib.request
 import urllib.parse
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # ─── CONFIG ───
 SUPABASE_URL = "https://bwlrhvmgychtgfwwgmhn.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+N8N_WEBHOOK_URL = "http://127.0.0.1:5678/webhook/hermes-activity"
 HERMES_API = "http://127.0.0.1:9119"
 POLL_INTERVAL = 30  # seconds
 HOME = Path.home()
@@ -35,7 +37,7 @@ def supabase_upsert(table: str, data: dict, on_conflict: str = "id") -> bool:
     if not SUPABASE_KEY:
         return False
     try:
-        url = f"{SUPABASE_URL}/rest/v1/{table}"
+        url = f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}"
         payload = json.dumps(data).encode()
         req = urllib.request.Request(url, data=payload, headers={
             "apikey": SUPABASE_KEY,
@@ -43,15 +45,11 @@ def supabase_upsert(table: str, data: dict, on_conflict: str = "id") -> bool:
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }, method="POST")
-        # Add upsert query parameter
-        full_url = url + f"?on_conflict={on_conflict}"
-        req = urllib.request.Request(full_url, data=payload, headers=req.headers, method=req.method)
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.status in (200, 201)
     except urllib.error.HTTPError as e:
         if e.code == 409:
-            # Conflict - try UPDATE instead
-            return supabase_update(table, data, on_conflict)
+            return _supabase_update(table, data, on_conflict)
         print(f"[ERROR] Supabase upsert HTTP {e.code}: {e.read().decode()[:200]}")
         return False
     except Exception as e:
@@ -59,16 +57,14 @@ def supabase_upsert(table: str, data: dict, on_conflict: str = "id") -> bool:
         return False
 
 
-def supabase_update(table: str, data: dict, on_conflict: str = "id") -> bool:
+def _supabase_update(table: str, data: dict, on_conflict: str = "id") -> bool:
     """Update a row in Supabase (fallback for conflicts)."""
     if not SUPABASE_KEY:
         return False
     try:
-        # Find the conflict column value
         conflict_val = data.get(on_conflict)
         if not conflict_val:
             return False
-            
         url = f"{SUPABASE_URL}/rest/v1/{table}?{on_conflict}=eq.{urllib.parse.quote(str(conflict_val))}"
         payload = json.dumps(data).encode()
         req = urllib.request.Request(url, data=payload, headers={
@@ -82,6 +78,23 @@ def supabase_update(table: str, data: dict, on_conflict: str = "id") -> bool:
     except Exception as e:
         print(f"[ERROR] Supabase update: {e}")
         return False
+
+
+def notify_n8n(activity_data: dict):
+    """Send activity to n8n webhook for workflow processing."""
+    try:
+        url = N8N_WEBHOOK_URL
+        payload = json.dumps(activity_data).encode()
+        req = urllib.request.Request(url, data=payload, headers={
+            "Content-Type": "application/json",
+        }, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            if r.status in (200, 201):
+                print(f"[N8N] Webhook sent successfully")
+            else:
+                print(f"[N8N] Webhook returned {r.status}")
+    except Exception as e:
+        print(f"[N8N] Webhook failed (non-critical): {e}")
 
 
 def sqlite_query(db_path: str, sql: str) -> list:
@@ -99,9 +112,9 @@ def sqlite_query(db_path: str, sql: str) -> list:
 
 
 def sync_sessions():
-    """Sync Hermes sessions to Supabase."""
+    """Sync Hermes sessions to Supabase and trigger n8n."""
     global last_session_count
-    
+
     rows = sqlite_query(STATE_DB, """
         SELECT id, title, source, model, message_count, 
                started_at,
@@ -110,11 +123,11 @@ def sync_sessions():
         ORDER BY started_at DESC 
         LIMIT 100
     """)
-    
+
     current_count = len(rows)
     if current_count != last_session_count:
         print(f"[SYNC] Sessions: {last_session_count} -> {current_count}")
-        
+
         for row in rows:
             if len(row) >= 6:
                 supabase_upsert("sessions", {
@@ -126,9 +139,9 @@ def sync_sessions():
                     "last_active": datetime.fromtimestamp(float(row[5]), tz=timezone.utc).isoformat() if row[5] else datetime.now(timezone.utc).isoformat(),
                     "created_at": datetime.fromtimestamp(float(row[5]), tz=timezone.utc).isoformat() if row[5] else datetime.now(timezone.utc).isoformat(),
                 })
-        
+
         last_session_count = current_count
-    
+
     # Log new active sessions as activities (sessions started in last 5 minutes)
     recent = sqlite_query(STATE_DB, f"""
         SELECT id, title, source, model, message_count, started_at
@@ -137,41 +150,43 @@ def sync_sessions():
         ORDER BY started_at DESC
         LIMIT 10
     """)
-    
+
     for row in recent:
         if len(row) >= 6:
             session_id = row[0]
             started_at = row[5]
             if session_id not in last_run_times:
-                supabase_upsert("agent_activities", {
+                activity = {
                     "agent_name": row[2] or "local",
                     "action": "session_active",
                     "details": f"Session '{row[1] or session_id}' — {row[4]} messages via {row[3]}",
                     "status": "running",
                     "metadata": {"session_id": session_id, "model": row[3], "messages": int(row[4]) if row[4] else 0},
-                })
+                }
+                supabase_upsert("agent_activities", activity)
+                notify_n8n(activity)
                 last_run_times[session_id] = started_at
 
 
 def sync_cron_jobs():
-    """Sync Hermes cron jobs to Supabase."""
+    """Sync Hermes cron jobs to Supabase and trigger n8n."""
     global last_cron_count
-    
+
     if not CRON_JOBS_FILE.exists():
         return
-    
+
     try:
         data = json.loads(CRON_JOBS_FILE.read_text())
         jobs = data.get("jobs", [])
-        
+
         current_count = len(jobs)
         if current_count != last_cron_count:
             print(f"[SYNC] Cron jobs: {last_cron_count} -> {current_count}")
-            
+
             for job in jobs:
                 job_id = job.get("id", "")
                 last_run = job.get("last_run_at")
-                
+
                 supabase_upsert("cron_jobs", {
                     "id": job_id,
                     "name": job.get("name"),
@@ -187,27 +202,31 @@ def sync_cron_jobs():
                     "profile": job.get("profile", "default"),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
-                
+
                 # Log cron runs as activities
                 if last_run and job_id not in last_run_times:
-                    supabase_upsert("agent_activities", {
+                    activity = {
                         "agent_name": "cron",
                         "action": "job_executed",
                         "details": f"Cron job '{job.get('name', job_id)}' ran — status: {job.get('last_status', 'ok')}",
                         "status": "completed" if job.get("last_status") == "ok" else "error",
                         "metadata": {"job_id": job_id, "job_name": job.get("name")},
-                    })
+                    }
+                    supabase_upsert("agent_activities", activity)
+                    notify_n8n(activity)
                     last_run_times[job_id] = last_run
                 elif last_run and last_run_times.get(job_id) != last_run:
-                    supabase_upsert("agent_activities", {
+                    activity = {
                         "agent_name": "cron",
                         "action": "job_executed",
                         "details": f"Cron job '{job.get('name', job_id)}' ran — status: {job.get('last_status', 'ok')}",
                         "status": "completed" if job.get("last_status") == "ok" else "error",
                         "metadata": {"job_id": job_id, "job_name": job.get("name")},
-                    })
+                    }
+                    supabase_upsert("agent_activities", activity)
+                    notify_n8n(activity)
                     last_run_times[job_id] = last_run
-            
+
             last_cron_count = current_count
     except Exception as e:
         print(f"[ERROR] Cron sync: {e}")
@@ -216,9 +235,9 @@ def sync_cron_jobs():
 def main():
     print(f"🚀 Hermes Activity Logger starting...")
     print(f"   Supabase: {SUPABASE_URL}")
-    print(f"   Hermes API: {HERMES_API}")
+    print(f"   N8N Webhook: {N8N_WEBHOOK_URL}")
     print(f"   Poll interval: {POLL_INTERVAL}s")
-    
+
     # Initial sync
     print("📊 Initial sync...")
     sync_sessions()
@@ -226,28 +245,30 @@ def main():
     supabase_upsert("agent_activities", {
         "agent_name": "system",
         "action": "logger_started",
-        "details": "Activity logger initialized and syncing",
+        "details": "Activity logger initialized with n8n integration",
         "status": "completed",
     })
-    
+
     cycle = 0
     while True:
         try:
             cycle += 1
             sync_sessions()
             sync_cron_jobs()
-            
+
             # Heartbeat every 10 cycles
             if cycle % 10 == 0:
-                supabase_upsert("agent_activities", {
+                activity = {
                     "agent_name": "system",
                     "action": "logger_heartbeat",
                     "details": f"Logger running — cycle {cycle}",
                     "status": "completed",
                     "metadata": {"cycle": cycle, "sessions": last_session_count, "cron_jobs": last_cron_count},
-                })
+                }
+                supabase_upsert("agent_activities", activity)
+                notify_n8n(activity)
                 print(f"[HEARTBEAT] Cycle {cycle} — sessions: {last_session_count}, cron: {last_cron_count}")
-            
+
             time.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:
             supabase_upsert("agent_activities", {
