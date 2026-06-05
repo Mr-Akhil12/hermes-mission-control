@@ -1,47 +1,86 @@
 'use client'
-import { BookOpen, Activity, Kanban, Clock, Cpu, FileText, Settings, KeyRound, Zap } from 'lucide-react'
 
-const features = [
-  { icon: Activity, title: 'Live Activity Feed', desc: 'Real-time stream of every agent action. Powered by Supabase Realtime subscriptions — no polling needed.' },
-  { icon: Kanban, title: 'Task Board', desc: 'Kanban-style task tracker. Create tasks, move them through todo → in progress → done. All stored in Supabase.' },
-  { icon: Clock, title: 'Cron Jobs', desc: 'View and manage scheduled agent tasks. Pause, resume, or delete cron jobs.' },
-  { icon: Cpu, title: 'Model Analytics', desc: 'See which AI models are being used across sessions.' },
-  { icon: FileText, title: 'Logs', desc: 'Real-time Hermes agent and gateway logs.' },
-  { icon: Settings, title: 'Config', desc: 'View and edit your hermes config.yaml.' },
-  { icon: KeyRound, title: 'Keys', desc: 'View environment variables and API keys.' },
-]
+import { BookOpen, ExternalLink, Zap, Server, Database, Globe } from 'lucide-react'
+
+export const dynamic = 'force-dynamic'
 
 export default function DocsPage() {
+  const sections = [
+    {
+      title: 'Getting Started',
+      icon: Zap,
+      color: 'var(--accent)',
+      links: [
+        { label: 'Quick Start Guide', desc: 'Set up Hermes in 5 minutes' },
+        { label: 'Architecture Overview', desc: 'How the system is structured' },
+        { label: 'Configuration', desc: 'Config.yaml reference' },
+      ]
+    },
+    {
+      title: 'Infrastructure',
+      icon: Server,
+      color: 'var(--purple)',
+      links: [
+        { label: 'Gateway API', desc: 'Port 9119 — agent communication' },
+        { label: 'Control Plane', desc: 'Port 9120 — dashboard & monitoring' },
+        { label: 'n8n Integration', desc: 'Workflow automation on port 5678' },
+        { label: 'Tailscale Access', desc: 'Secure remote access via mesh VPN' },
+      ]
+    },
+    {
+      title: 'Data Layer',
+      icon: Database,
+      color: 'var(--cyan)',
+      links: [
+        { label: 'Supabase Schema', desc: '4 tables: activities, tasks, sessions, cron_jobs' },
+        { label: 'Realtime Subscriptions', desc: 'Live data sync to dashboard' },
+        { label: 'RLS Policies', desc: 'Row-level security configuration' },
+      ]
+    },
+    {
+      title: 'Deployment',
+      icon: Globe,
+      color: 'var(--success)',
+      links: [
+        { label: 'Vercel Dashboard', desc: 'hermes-mission-control-seven.vercel.app' },
+        { label: 'GitHub Repo', desc: 'github.com/Mr-Akhil12/hermes-mission-control' },
+        { label: 'Docker (n8n)', desc: 'Self-hosted workflow automation' },
+      ]
+    },
+  ]
+
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h2 className="text-lg font-semibold mb-2">Hermes OS Mission Control</h2>
-        <p className="text-sm text-zinc-400">A real-time dashboard for monitoring and managing your Hermes AI agents. Built with Next.js, Supabase, and deployed on Vercel.</p>
+    <div className="space-y-6">
+      <div className="animate-slide-up">
+        <h1 className="text-2xl font-bold gradient-text">Documentation</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Hermes OS system documentation and references</p>
       </div>
 
-      <div className="grid gap-3">
-        {features.map(f => (
-          <div key={f.title} className="bg-[#111118] rounded-xl p-4 border border-[#1e1e2a] flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center flex-shrink-0">
-              <f.icon className="w-4 h-4 text-orange-400" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
+        {sections.map(section => {
+          const Icon = section.icon
+          return (
+            <div key={section.title} className="rounded-2xl glass-panel border border-[var(--border)] overflow-hidden card-hover">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[var(--border)]">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${section.color}15` }}>
+                  <Icon className="w-4 h-4" style={{ color: section.color }} />
+                </div>
+                <h3 className="text-sm font-semibold">{section.title}</h3>
+              </div>
+              <div className="p-3 space-y-1">
+                {section.links.map(link => (
+                  <div key={link.label} className="flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer group">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">{link.label}</p>
+                      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{link.desc}</p>
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              <div className="text-sm font-medium">{f.title}</div>
-              <p className="text-xs text-zinc-500 mt-0.5">{f.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-[#111118] rounded-xl p-4 border border-[#1e1e2a]">
-        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2"><Zap className="w-4 h-4 text-orange-400" /> Architecture</h3>
-        <ul className="text-xs text-zinc-400 space-y-1.5 list-disc list-inside">
-          <li><strong className="text-zinc-300">Supabase</strong> — PostgreSQL database with Realtime subscriptions</li>
-          <li><strong className="text-zinc-300">Next.js</strong> — React framework, deployed on Vercel</li>
-          <li><strong className="text-zinc-300">Vercel</strong> — Auto-deploys from GitHub on every push</li>
-          <li><strong className="text-zinc-300">Cloudflare Tunnel</strong> — Exposes local Hermes API to Vercel</li>
-          <li><strong className="text-zinc-300">Agent Logger</strong> — Background service that logs agent activity to Supabase</li>
-        </ul>
+          )
+        })}
       </div>
     </div>
   )

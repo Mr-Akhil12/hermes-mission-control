@@ -1,38 +1,61 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { FileText } from 'lucide-react'
+
+import { FileText, Loader2, RefreshCw, AlertTriangle, Terminal } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+
+export const dynamic = 'force-dynamic'
 
 export default function LogsPage() {
-  const [logs, setLogs] = useState('')
   const [loading, setLoading] = useState(true)
-  const [lines, setLines] = useState(100)
+  const [logs, setLogs] = useState<string[]>([])
 
-  useEffect(() => {
-    setLoading(true)
-    fetch(`${process.env.HERMES_API_URL || 'http://127.0.0.1:9119'}/api/logs?lines=${lines}`)
-      .then(r => r.json())
-      .then(d => setLogs(d.content || d.logs || 'No logs'))
-      .catch(() => setLogs('Failed to fetch logs'))
-      .finally(() => setLoading(false))
-  }, [lines])
+  const loadData = useCallback(async () => {
+    try {
+      const res = await fetch('/api/data?table=agent_activities&limit=50&order=created_at.desc')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setLogs((data || []).map((a: any) => `[${new Date(a.created_at).toLocaleTimeString()}] ${a.agent_name}: ${a.action}${a.details ? ' — ' + a.details : ''}`))
+    } catch {
+      setLogs(['Unable to load logs'])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Logs</h2>
-        <div className="flex gap-2">
-          {[50, 100, 500].map(n => (
-            <button key={n} onClick={() => setLines(n)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium ${lines === n ? 'bg-orange-500/10 text-orange-400' : 'text-zinc-500 hover:text-zinc-300'}`}>
-              {n}
-            </button>
-          ))}
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-slide-up">
+        <div>
+          <h1 className="text-2xl font-bold gradient-text">Logs</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">System and agent logs</p>
         </div>
+        <button onClick={loadData} className="flex items-center gap-2 px-4 py-2 rounded-xl glass-panel border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </button>
       </div>
-      <div className="bg-[#111118] rounded-xl border border-[#1e1e2a] p-4 max-h-[calc(100vh-200px)] overflow-auto">
-        {loading ? <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" /></div> :
-          <pre className="text-xs font-mono text-zinc-400 whitespace-pre-wrap leading-relaxed">{logs}</pre>
-        }
+
+      <div className="animate-slide-up rounded-2xl glass-panel border border-[var(--border)] overflow-hidden" style={{ animationDelay: '60ms' }}>
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--border)]">
+          <Terminal className="w-4 h-4 text-[var(--accent)]" />
+          <span className="text-xs font-medium text-[var(--text-secondary)]">Agent Log Stream</span>
+        </div>
+        <div className="max-h-[600px] overflow-y-auto p-4 font-mono text-xs leading-relaxed">
+          {loading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-5 h-5 text-[var(--accent)] animate-spin" />
+            </div>
+          ) : logs.length === 0 ? (
+            <p className="text-[var(--text-muted)] text-center py-10">No logs available</p>
+          ) : (
+            logs.map((log, i) => (
+              <div key={i} className="py-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
+                {log}
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )
