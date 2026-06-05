@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Activity, Loader2, RefreshCw, Search, Clock, AlertTriangle, CheckCircle2, X, ChevronDown } from 'lucide-react'
+import { Activity, Loader2, RefreshCw, Search, Clock, AlertTriangle, CheckCircle2, X, ChevronDown, Timer, Calendar, Settings, FileText } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +12,31 @@ interface ActivityItem {
   details: string | null
   status: 'running' | 'completed' | 'error'
   created_at: string
+  metadata?: {
+    job_id?: string
+    job_name?: string
+    session_id?: string
+    model?: string
+    messages?: number
+    [key: string]: unknown
+  }
+}
+
+interface CronJob {
+  id: string
+  name: string
+  schedule: string
+  schedule_display?: string
+  enabled?: boolean
+  state?: string
+  last_run_at?: string | null
+  next_run_at?: string | null
+  last_status?: string | null
+  last_error?: string | null
+  deliver?: string
+  profile?: string
+  created_at?: string
+  updated_at?: string
 }
 
 function timeAgo(dateStr: string) {
@@ -21,6 +46,31 @@ function timeAgo(dateStr: string) {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
+}
+
+function timeUntil(dateStr: string) {
+  if (!dateStr) return '—'
+  const s = (new Date(dateStr).getTime() - Date.now()) / 1000
+  if (s < 0) return 'Overdue'
+  if (s < 60) return `in ${Math.floor(s)}s`
+  if (s < 3600) return `in ${Math.floor(s / 60)}m`
+  if (s < 86400) return `in ${Math.floor(s / 3600)}h`
+  return `in ${Math.floor(s / 86400)}d`
+}
+
+function getScheduleHuman(expr: string): string {
+  if (!expr) return '—'
+  if (expr === '*/1 * * * *') return 'Every minute'
+  if (expr === '*/15 * * * *') return 'Every 15 min'
+  if (expr === '0 */2 * * *') return 'Every 2 hours'
+  if (expr === '0 * * * *') return 'Hourly'
+  if (/^0 \d+ \* \* \*$/.test(expr)) {
+    const hour = parseInt(expr.split(' ')[1])
+    return `Daily at ${hour}:00 UTC`
+  }
+  if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
+  if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
+  return expr
 }
 
 const statusDot: Record<string, string> = {
@@ -44,6 +94,7 @@ const TIME_FILTERS = [
 
 export default function ActivityPage() {
   const [activities, setActivities] = useState<ActivityItem[]>([])
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -52,16 +103,24 @@ export default function ActivityPage() {
   const [limit, setLimit] = useState<number>(50)
   const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [cronOnly, setCronOnly] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
       setError(null)
       setRefreshing(true)
-      // Fetch a large pool so we can filter client-side
-      const res = await fetch('/api/data?table=agent_activities&limit=500&order=created_at.desc')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setActivities(data || [])
+      const [activitiesRes, cronRes] = await Promise.all([
+        fetch('/api/data?table=agent_activities&limit=500&order=created_at.desc'),
+        fetch('/api/data?table=cron_jobs&limit=100&order=created_at.desc'),
+      ])
+      if (!activitiesRes.ok) throw new Error(`Activities HTTP ${activitiesRes.status}`)
+      if (!cronRes.ok) throw new Error(`Cron jobs HTTP ${cronRes.status}`)
+      const [activitiesData, cronData] = await Promise.all([
+        activitiesRes.json(),
+        cronRes.json(),
+      ])
+      setActivities(activitiesData || [])
+      setCronJobs(cronData || [])
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -72,8 +131,14 @@ export default function ActivityPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Build a map of cron job ID -> job details for quick lookup
+  const cronJobMap = new Map<string, CronJob>()
+  cronJobs.forEach(job => cronJobMap.set(job.id, job))
+
   // Apply all filters
   const filtered = activities.filter(a => {
+    // Cron-only filter
+    if (cronOnly && a.agent_name !== 'cron') return false
     // Status filter
     if (statusFilter !== 'all' && a.status !== statusFilter) return false
     // Time filter
@@ -101,6 +166,28 @@ export default function ActivityPage() {
     completed: activities.filter(a => a.status === 'completed').length,
     error: activities.filter(a => a.status === 'error').length,
     running: activities.filter(a => a.status === 'running').length,
+    cron: activities.filter(a => a.agent_name === 'cron').length,
+  }
+
+  // Helper: get display name for an activity (cron name or agent_name)
+  const getActivityDisplayName = (a: ActivityItem): string => {
+    if (a.agent_name === 'cron') {
+      // Try metadata.job_name first, then lookup in cronJobMap
+      const jobName = a.metadata?.job_name
+      if (jobName) return jobName
+      const jobId = a.metadata?.job_id
+      if (jobId && cronJobMap.has(jobId)) return cronJobMap.get(jobId)!.name || jobId
+      return 'Cron Job'
+    }
+    return a.agent_name
+  }
+
+  // Helper: get the full cron job details for a cron activity
+  const getCronJobForActivity = (a: ActivityItem): CronJob | null => {
+    if (a.agent_name !== 'cron') return null
+    const jobId = a.metadata?.job_id
+    if (jobId && cronJobMap.has(jobId)) return cronJobMap.get(jobId)!
+    return null
   }
 
   return (
@@ -140,7 +227,7 @@ export default function ActivityPage() {
 
       {/* Filters Bar */}
       <div className="animate-slide-up space-y-3" style={{ animationDelay: '60ms' }}>
-        {/* Search + Limit row */}
+        {/* Search row */}
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
@@ -159,8 +246,8 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        {/* Time filters + Status filters */}
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+        {/* Time filters + Status filters + Cron toggle */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 flex-wrap">
           {/* Time filter */}
           <div className="flex items-center gap-1 glass-panel border border-[var(--border)] rounded-xl p-1">
             {TIME_FILTERS.map(tf => (
@@ -193,6 +280,18 @@ export default function ActivityPage() {
               </button>
             ))}
           </div>
+          {/* Cron-only toggle */}
+          <button
+            onClick={() => setCronOnly(!cronOnly)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
+              cronOnly
+                ? 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/30'
+                : 'glass-panel border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-hover)]'
+            }`}
+          >
+            <Clock className="w-3 h-3" />
+            Cron only ({counts.cron})
+          </button>
         </div>
       </div>
 
@@ -217,6 +316,8 @@ export default function ActivityPage() {
           <div className="max-h-[600px] overflow-y-auto divide-y divide-[var(--border)]">
             {filtered.map((a) => {
               const st = statusLabel[a.status] || { text: a.status, color: 'text-[var(--text-muted)]' }
+              const displayName = getActivityDisplayName(a)
+              const isCron = a.agent_name === 'cron'
               return (
                 <button
                   key={a.id}
@@ -226,7 +327,8 @@ export default function ActivityPage() {
                   <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${statusDot[a.status] || 'bg-[var(--text-muted)]'}`} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-[var(--accent)]">{a.agent_name}</span>
+                      <span className={`text-xs font-semibold ${isCron ? 'text-[var(--warning)]' : 'text-[var(--accent)]'}`}>{displayName}</span>
+                      {isCron && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--warning)]/10 text-[var(--warning)] font-medium uppercase tracking-wider">cron</span>}
                       <span className="text-xs text-[var(--text-secondary)]">{a.action}</span>
                       <span className={`text-[10px] font-medium ${st.color}`}>· {st.text}</span>
                     </div>
@@ -245,59 +347,147 @@ export default function ActivityPage() {
       )}
 
       {/* Activity Detail Modal */}
-      {selectedActivity && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setSelectedActivity(null)}>
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      {selectedActivity && (() => {
+        const isCron = selectedActivity.agent_name === 'cron'
+        const cronJob = isCron ? getCronJobForActivity(selectedActivity) : null
+        const displayName = getActivityDisplayName(selectedActivity)
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setSelectedActivity(null)}>
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-          {/* Modal */}
-          <div
-            className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl glass-panel border border-[var(--border)] p-5 sm:p-6 animate-slide-up"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              onClick={() => setSelectedActivity(null)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-all"
+            {/* Modal */}
+            <div
+              className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl glass-panel border border-[var(--border)] p-5 sm:p-6 animate-slide-up"
+              onClick={e => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-            </button>
+              {/* Close button */}
+              <button
+                onClick={() => setSelectedActivity(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
 
-            {/* Status badge */}
-            <div className="flex items-center gap-2 mb-4">
-              <div className={`w-3 h-3 rounded-full ${statusDot[selectedActivity.status] || 'bg-[var(--text-muted)]'}`} />
-              <span className={`text-xs font-semibold uppercase tracking-wider ${statusLabel[selectedActivity.status]?.color || 'text-[var(--text-muted)]'}`}>
-                {statusLabel[selectedActivity.status]?.text || selectedActivity.status}
-              </span>
-            </div>
-
-            {/* Title */}
-            <h2 className="text-lg font-bold text-[var(--text-primary)] mb-1">{selectedActivity.agent_name}</h2>
-            <p className="text-sm text-[var(--text-secondary)] mb-4">{selectedActivity.action}</p>
-
-            {/* Details */}
-            {selectedActivity.details && (
-              <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4 mb-4">
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-2 font-medium">Details</p>
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed break-words">{selectedActivity.details}</p>
+              {/* Status badge */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className={`w-3 h-3 rounded-full ${statusDot[selectedActivity.status] || 'bg-[var(--text-muted)]'}`} />
+                <span className={`text-xs font-semibold uppercase tracking-wider ${statusLabel[selectedActivity.status]?.color || 'text-[var(--text-muted)]'}`}>
+                  {statusLabel[selectedActivity.status]?.text || selectedActivity.status}
+                </span>
               </div>
-            )}
 
-            {/* Timestamp */}
-            <div className="flex items-center gap-2 text-[var(--text-muted)]">
-              <Clock className="w-3.5 h-3.5" />
-              <span className="text-xs">
-                {new Date(selectedActivity.created_at).toLocaleString('en-ZA', {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                })}
-                {' · '}
-                {timeAgo(selectedActivity.created_at)}
-              </span>
+              {/* Title */}
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">{displayName}</h2>
+                {isCron && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--warning)]/10 text-[var(--warning)] font-medium uppercase tracking-wider">cron</span>}
+              </div>
+              <p className="text-sm text-[var(--text-secondary)] mb-4">{selectedActivity.action}</p>
+
+              {/* ─── CRON JOB DETAILS ─── */}
+              {isCron && cronJob && (
+                <div className="space-y-3 mb-4">
+                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5">
+                    <Settings className="w-3 h-3" /> Cron Job Details
+                  </p>
+
+                  {/* Schedule */}
+                  <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <Calendar className="w-4 h-4 text-[var(--accent)] mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Schedule</p>
+                        <p className="text-sm text-[var(--text-primary)] font-medium">{getScheduleHuman(cronJob.schedule_display || cronJob.schedule || '')}</p>
+                        <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">{cronJob.schedule}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">State</p>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${cronJob.enabled !== false ? 'bg-[var(--success)]' : 'bg-[var(--text-muted)]'}`} />
+                          <span className="text-xs text-[var(--text-secondary)]">{cronJob.enabled !== false ? 'Enabled' : 'Disabled'}</span>
+                          {cronJob.state && <span className="text-[10px] text-[var(--text-muted)]">({cronJob.state})</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Profile</p>
+                        <p className="text-xs text-[var(--text-secondary)]">{cronJob.profile || 'default'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Last Run</p>
+                        <p className="text-xs text-[var(--text-secondary)]">{cronJob.last_run_at ? timeAgo(cronJob.last_run_at) : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Next Run</p>
+                        <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1">
+                          <Timer className="w-3 h-3" />
+                          {cronJob.next_run_at ? timeUntil(cronJob.next_run_at) : '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Deliver To</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{cronJob.deliver || 'local'}</p>
+                    </div>
+
+                    {cronJob.last_status && (
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Last Status</p>
+                        <div className="flex items-center gap-1.5">
+                          {cronJob.last_status === 'ok' || cronJob.last_status === 'completed' ? (
+                            <CheckCircle2 className="w-3 h-3 text-[var(--success)]" />
+                          ) : (
+                            <AlertTriangle className="w-3 h-3 text-[var(--danger)]" />
+                          )}
+                          <span className={`text-xs ${cronJob.last_status === 'ok' || cronJob.last_status === 'completed' ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
+                            {cronJob.last_status}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {cronJob.last_error && (
+                      <div>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Last Error</p>
+                        <p className="text-xs text-[var(--danger)]/80 leading-relaxed break-words">{cronJob.last_error}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Details */}
+              {selectedActivity.details && (
+                <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4 mb-4">
+                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-2 font-medium flex items-center gap-1.5">
+                    <FileText className="w-3 h-3" /> Details
+                  </p>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed break-words">{selectedActivity.details}</p>
+                </div>
+              )}
+
+              {/* Timestamp */}
+              <div className="flex items-center gap-2 text-[var(--text-muted)]">
+                <Clock className="w-3.5 h-3.5" />
+                <span className="text-xs">
+                  {new Date(selectedActivity.created_at).toLocaleString('en-ZA', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
+                  {' · '}
+                  {timeAgo(selectedActivity.created_at)}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
