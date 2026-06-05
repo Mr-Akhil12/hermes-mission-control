@@ -45,13 +45,37 @@ function getScheduleHuman(expr: string): string {
   if (expr === '*/15 * * * *') return 'Every 15 min'
   if (expr === '0 */2 * * *') return 'Every 2 hours'
   if (expr === '0 * * * *') return 'Hourly'
-  if (/^0 \d+ \* \* \*$/.test(expr)) {
-    const utcHour = parseInt(expr.split(' ')[1])
+
+  // Every N hours: 0 */N * * *
+  const everyNHours = expr.match(/^0 \*\/(\d+) \* \* \*$/)
+  if (everyNHours) {
+    const n = parseInt(everyNHours[1])
+    return `Every ${n} hours`
+  }
+
+  // Daily at specific hour: 0 H * * *
+  const dailyMatch = expr.match(/^0 (\d+) \* \* \*$/)
+  if (dailyMatch) {
+    const utcHour = parseInt(dailyMatch[1])
     const saHour = (utcHour + 2) % 24
     return `Daily at ${saHour}:00 SAST`
   }
+
+  // Every N days at specific hour: 0 H */N * *
+  const everyNDays = expr.match(/^0 (\d+) \*\/(\d+) \* \*$/)
+  if (everyNDays) {
+    const utcHour = parseInt(everyNDays[1])
+    const n = parseInt(everyNDays[2])
+    const saHour = (utcHour + 2) % 24
+    return `Every ${n} days at ${saHour}:00 SAST`
+  }
+
+  // Weekly: 0 H * * DOW
   if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
+
+  // Monthly: 0 H D * *
   if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
+
   return expr
 }
 
