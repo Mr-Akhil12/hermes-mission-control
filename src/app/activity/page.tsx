@@ -65,8 +65,9 @@ function getScheduleHuman(expr: string): string {
   if (expr === '0 */2 * * *') return 'Every 2 hours'
   if (expr === '0 * * * *') return 'Hourly'
   if (/^0 \d+ \* \* \*$/.test(expr)) {
-    const hour = parseInt(expr.split(' ')[1])
-    return `Daily at ${hour}:00 SAST`
+    const utcHour = parseInt(expr.split(' ')[1])
+    const saHour = (utcHour + 2) % 24
+    return `Daily at ${saHour}:00 SAST`
   }
   if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
   if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
