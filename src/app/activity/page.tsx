@@ -137,8 +137,8 @@ export default function ActivityPage() {
 
   // Apply all filters
   const filtered = activities.filter(a => {
-    // Cron-only filter
-    if (cronOnly && a.agent_name !== 'cron') return false
+    // Cron-only filter: only actual cron job executions, not cron-triggered sessions
+    if (cronOnly && !(a.agent_name === 'cron' && a.action === 'job_executed')) return false
     // Status filter
     if (statusFilter !== 'all' && a.status !== statusFilter) return false
     // Time filter
@@ -171,7 +171,7 @@ export default function ActivityPage() {
 
   // Helper: get display name for an activity (cron name or agent_name)
   const getActivityDisplayName = (a: ActivityItem): string => {
-    if (a.agent_name === 'cron') {
+    if (a.agent_name === 'cron' && a.action === 'job_executed') {
       // Try metadata.job_name first, then lookup in cronJobMap
       const jobName = a.metadata?.job_name
       if (jobName) return jobName
@@ -184,7 +184,7 @@ export default function ActivityPage() {
 
   // Helper: get the full cron job details for a cron activity
   const getCronJobForActivity = (a: ActivityItem): CronJob | null => {
-    if (a.agent_name !== 'cron') return null
+    if (a.agent_name !== 'cron' || a.action !== 'job_executed') return null
     const jobId = a.metadata?.job_id
     if (jobId && cronJobMap.has(jobId)) return cronJobMap.get(jobId)!
     return null
@@ -317,7 +317,7 @@ export default function ActivityPage() {
             {filtered.map((a) => {
               const st = statusLabel[a.status] || { text: a.status, color: 'text-[var(--text-muted)]' }
               const displayName = getActivityDisplayName(a)
-              const isCron = a.agent_name === 'cron'
+              const isCron = a.agent_name === 'cron' && a.action === 'job_executed'
               return (
                 <button
                   key={a.id}
@@ -348,7 +348,7 @@ export default function ActivityPage() {
 
       {/* Activity Detail Modal */}
       {selectedActivity && (() => {
-        const isCron = selectedActivity.agent_name === 'cron'
+        const isCron = selectedActivity.agent_name === 'cron' && selectedActivity.action === 'job_executed'
         const cronJob = isCron ? getCronJobForActivity(selectedActivity) : null
         const displayName = getActivityDisplayName(selectedActivity)
         return (
