@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Table parameter required' }, { status: 400 })
   }
 
-  const allowedTables = ['agent_activities', 'tasks', 'sessions', 'cron_jobs', 'cron_runs']
+  const allowedTables = ['agent_activities', 'tasks', 'sessions', 'cron_jobs', 'cron_runs', 'conversations', 'messages']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Table and data required' }, { status: 400 })
   }
 
-  const allowedTables = ['agent_activities', 'tasks', 'cron_jobs', 'cron_runs']
+  const allowedTables = ['agent_activities', 'tasks', 'cron_jobs', 'cron_runs', 'conversations', 'messages']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
@@ -83,7 +83,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Table, id, and data required' }, { status: 400 })
   }
 
-  const allowedTables = ['tasks', 'agent_activities', 'cron_jobs', 'cron_runs']
+  const allowedTables = ['tasks', 'agent_activities', 'cron_jobs', 'cron_runs', 'conversations', 'messages']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
@@ -111,7 +111,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Table and id required' }, { status: 400 })
   }
 
-  const allowedTables = ['tasks', 'agent_activities', 'cron_runs']
+  const allowedTables = ['tasks', 'agent_activities', 'cron_runs', 'conversations', 'messages']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
