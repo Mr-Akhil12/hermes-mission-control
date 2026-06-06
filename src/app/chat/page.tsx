@@ -5,7 +5,7 @@ import {
   Loader2, Plus, Trash2, Send, Clock, Settings, MessageSquare,
   ChevronDown, ChevronRight, AlertTriangle, Zap, Copy, Check,
   Paperclip, ClockIcon, Brain, RefreshCw, X, Sparkles, Bot,
-  User, RotateCcw, Clock3, FileText, XCircle
+  User, RotateCcw, Clock3, FileText, XCircle, CheckCircle2
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 
