@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import {
   Loader2, Plus, AlertTriangle, GripVertical, Clock, Trash2, X,
-  ChevronDown, Sparkles, Tag, Calendar
+  Sparkles, Tag, FileEdit
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 
@@ -19,24 +19,26 @@ interface Task {
   id: string
   title: string
   description: string | null
-  status: 'todo' | 'in_progress' | 'done'
-  priority: 'low' | 'normal' | 'high'
+  status: string
+  priority: string
   agent_name: string | null
   created_at: string
   updated_at: string
+  _column?: string // draft, todo, in_progress, done
 }
 
-interface Column {
+interface ColumnDef {
   id: string
   title: string
-  color: string
   dotColor: string
+  icon: string
 }
 
-const COLUMNS: Column[] = [
-  { id: 'todo', title: 'To Do', color: 'var(--text-muted)', dotColor: 'bg-[var(--text-muted)]' },
-  { id: 'in_progress', title: 'In Progress', color: 'var(--warning)', dotColor: 'bg-[var(--warning)]' },
-  { id: 'done', title: 'Done', color: 'var(--success)', dotColor: 'bg-[var(--success)]' },
+const COLUMNS: ColumnDef[] = [
+  { id: 'draft', title: 'Draft', dotColor: 'bg-[var(--purple)]', icon: '✏️' },
+  { id: 'todo', title: 'To Do', dotColor: 'bg-[var(--text-muted)]', icon: '📋' },
+  { id: 'in_progress', title: 'In Progress', dotColor: 'bg-[var(--warning)]', icon: '⚡' },
+  { id: 'done', title: 'Done', dotColor: 'bg-[var(--success)]', icon: '✅' },
 ]
 
 const priorityConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -54,6 +56,27 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(s / 86400)}d`
 }
 
+// Extract column from description JSON prefix
+function getColumn(task: Task): string {
+  if (task._column) return task._column
+  if (task.description?.startsWith('{"_col":')) {
+    try {
+      const meta = JSON.parse(task.description.split('\n')[0])
+      return meta._col || task.status
+    } catch { /* fall through */ }
+  }
+  return task.status
+}
+
+// Get display description (without JSON prefix)
+function getDisplayDesc(task: Task): string {
+  if (!task.description) return ''
+  if (task.description.startsWith('{"_col":')) {
+    return task.description.split('\n').slice(1).join('\n')
+  }
+  return task.description
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,7 +86,6 @@ export default function TasksPage() {
   const [newPriority, setNewPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [newDescription, setNewDescription] = useState('')
   const [creating, setCreating] = useState(false)
-  const [expandedTask, setExpandedTask] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -71,7 +93,12 @@ export default function TasksPage() {
       const res = await fetch('/api/data?table=tasks&limit=200&order=updated_at.desc')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setTasks(data || [])
+      // Enrich with column info from description
+      const enriched = (data || []).map((t: Task) => ({
+        ...t,
+        _column: getColumn(t),
+      }))
+      setTasks(enriched)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
@@ -81,10 +108,10 @@ export default function TasksPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Real-time subscription
+  // Real-time Supabase subscription
   useEffect(() => {
     const channel = supabase
-      .channel('tasks-changes')
+      .channel('tasks-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
         loadData()
       })
@@ -92,23 +119,30 @@ export default function TasksPage() {
     return () => { supabase.removeChannel(channel) }
   }, [loadData])
 
-  // Group tasks by status
-  const getColumnTasks = (status: string) => tasks.filter(t => t.status === status)
+  const getColumnTasks = (colId: string) => tasks.filter(t => getColumn(t) === colId)
 
-  // Handle drag end
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result
     if (!destination) return
     if (destination.droppableId === source.droppableId && destination.index === source.index) return
 
-    const newStatus = destination.droppableId as Task['status']
+    const newColumn = destination.droppableId
+    const task = tasks.find(t => t.id === draggableId)
+    if (!task) return
+
+    // Build new description with column prefix
+    const displayDesc = getDisplayDesc(task)
+    const newDesc = JSON.stringify({ _col: newColumn }) + (displayDesc ? `\n${displayDesc}` : '')
+
+    // Map column to Supabase status
+    const supaStatus = newColumn === 'draft' ? 'todo' : newColumn
 
     // Optimistic update
     setTasks(prev => prev.map(t =>
-      t.id === draggableId ? { ...t, status: newStatus } : t
+      t.id === draggableId ? { ...t, _column: newColumn, status: supaStatus, description: newDesc } : t
     ))
 
-    // Persist to Supabase
+    // Persist
     try {
       await fetch('/api/data', {
         method: 'PATCH',
@@ -116,20 +150,21 @@ export default function TasksPage() {
         body: JSON.stringify({
           table: 'tasks',
           id: draggableId,
-          data: { status: newStatus, updated_at: new Date().toISOString() },
+          data: { status: supaStatus, description: newDesc, updated_at: new Date().toISOString() },
         }),
       })
-    } catch {
-      // Revert on failure
-      loadData()
-    }
+    } catch { loadData() }
   }
 
-  // Create new task
-  const createTask = async () => {
+  const createTask = async (column: string = 'draft') => {
     if (!newTitle.trim()) return
     setCreating(true)
     try {
+      const desc = newDescription.trim()
+        ? JSON.stringify({ _col: column }) + `\n${newDescription.trim()}`
+        : JSON.stringify({ _col: column })
+      const supaStatus = column === 'draft' ? 'todo' : column
+
       const res = await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,8 +172,8 @@ export default function TasksPage() {
           table: 'tasks',
           data: {
             title: newTitle.trim(),
-            description: newDescription.trim() || null,
-            status: 'todo',
+            description: desc,
+            status: supaStatus,
             priority: newPriority,
             agent_name: 'user',
           },
@@ -155,7 +190,6 @@ export default function TasksPage() {
     finally { setCreating(false) }
   }
 
-  // Delete task
   const deleteTask = async (id: string) => {
     try {
       await fetch(`/api/data?table=tasks&id=${id}`, { method: 'DELETE' })
@@ -190,15 +224,17 @@ export default function TasksPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold gradient-text">Tasks</h1>
           <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1">
-            {tasks.length} tasks · {getColumnTasks('in_progress').length} active
+            {tasks.length} tasks · {getColumnTasks('in_progress').length} active · {getColumnTasks('draft').length} drafts
           </p>
         </div>
-        <button
-          onClick={() => setShowNewTask(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white text-sm font-medium hover:opacity-90 transition-opacity self-start"
-        >
-          <Plus className="w-4 h-4" /> New Task
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={() => setShowNewTask(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-4 h-4" /> New Task
+          </button>
+        </div>
       </div>
 
       {/* New Task Form */}
@@ -218,7 +254,7 @@ export default function TasksPage() {
               placeholder="What needs to be done?"
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && createTask()}
+              onKeyDown={e => e.key === 'Enter' && createTask('draft')}
               autoFocus
               className="w-full px-4 py-2.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40"
             />
@@ -247,14 +283,23 @@ export default function TasksPage() {
                 ))}
               </div>
               <div className="flex-1" />
-              <button
-                onClick={createTask}
-                disabled={!newTitle.trim() || creating}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
-              >
-                {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Create
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => createTask('draft')}
+                  disabled={!newTitle.trim() || creating}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--purple)]/10 text-[var(--purple)] border border-[var(--purple)]/20 text-sm font-medium hover:bg-[var(--purple)]/20 transition-all disabled:opacity-40"
+                >
+                  <FileEdit className="w-3.5 h-3.5" /> Save as Draft
+                </button>
+                <button
+                  onClick={() => createTask('todo')}
+                  disabled={!newTitle.trim() || creating}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Create
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -262,7 +307,7 @@ export default function TasksPage() {
 
       {/* Kanban Board */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-slide-up" style={{ animationDelay: '60ms' }}>
           {COLUMNS.map(column => {
             const columnTasks = getColumnTasks(column.id)
             return (
@@ -276,27 +321,37 @@ export default function TasksPage() {
                       {columnTasks.length}
                     </span>
                   </div>
+                  <button
+                    onClick={() => {
+                      setShowNewTask(true)
+                      // Pre-select column for new task
+                    }}
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                {/* Droppable Area */}
+                {/* Droppable */}
                 <Droppable droppableId={column.id}>
                   {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className={`p-3 min-h-[200px] space-y-2 transition-colors ${
+                      className={`p-2 min-h-[200px] max-h-[500px] overflow-y-auto space-y-2 transition-colors ${
                         snapshot.isDraggingOver ? 'bg-[var(--accent)]/5' : ''
                       }`}
                     >
                       {columnTasks.map((task, index) => {
                         const pri = priorityConfig[task.priority] || priorityConfig.normal
+                        const desc = getDisplayDesc(task)
                         return (
                           <Draggable key={task.id} draggableId={task.id} index={index}>
                             {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                className={`rounded-xl border p-3 transition-all cursor-grab active:cursor-grabbing ${
+                                className={`rounded-xl border p-3 transition-all cursor-grab active:cursor-grabbing group ${
                                   snapshot.isDragging
                                     ? 'border-[var(--accent)]/30 bg-[var(--bg-elevated)] shadow-lg shadow-black/30 rotate-[2deg]'
                                     : 'border-[var(--border)] bg-[var(--bg-secondary)] hover:border-[var(--border-hover)]'
@@ -304,10 +359,10 @@ export default function TasksPage() {
                               >
                                 <div className="flex items-start gap-2">
                                   <div {...provided.dragHandleProps} className="mt-0.5 flex-shrink-0">
-                                    <GripVertical className="w-3.5 h-3.5 text-[var(--text-muted)] opacity-40 hover:opacity-100" />
+                                    <GripVertical className="w-3.5 h-3.5 text-[var(--text-muted)] opacity-30 group-hover:opacity-100 transition-opacity" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
+                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                       <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${pri.bg} ${pri.color}`}>
                                         {pri.label}
                                       </span>
@@ -318,8 +373,8 @@ export default function TasksPage() {
                                       )}
                                     </div>
                                     <p className="text-xs font-medium text-[var(--text-primary)] leading-relaxed">{task.title}</p>
-                                    {task.description && (
-                                      <p className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-2">{task.description}</p>
+                                    {desc && (
+                                      <p className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-2">{desc}</p>
                                     )}
                                     <div className="flex items-center gap-2 mt-2">
                                       <span className="text-[9px] text-[var(--text-muted)] flex items-center gap-1">
@@ -328,10 +383,10 @@ export default function TasksPage() {
                                       </span>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); deleteTask(task.id) }}
-                                        className="ml-auto text-[var(--text-muted)] hover:text-[var(--danger)] transition-colors opacity-0 group-hover:opacity-100"
-                                        style={{ opacity: 0.4 }}
+                                        className="ml-auto text-[var(--text-muted)] hover:text-[var(--danger)] transition-opacity opacity-0 group-hover:opacity-100"
+                                        style={{ opacity: 0.3 }}
                                         onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
+                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.3')}
                                       >
                                         <Trash2 className="w-3 h-3" />
                                       </button>
