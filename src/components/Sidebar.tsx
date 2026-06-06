@@ -58,17 +58,21 @@ export default function Sidebar() {
   return (
     <>
       {/* ─── Mobile Header ─── */}
-      <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-14 bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center px-4 gap-3">
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="w-9 h-9 rounded-lg bg-[var(--bg-card)] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <Menu className="w-4 h-4" />
-        </button>
+      <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-14 bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
         <div className="flex items-center gap-2.5">
-          <Image src="/logo.png" alt="Hermes" width={28} height={28} className="rounded-lg" />
+          <Image src="/logo.png" alt="Hermes" width={42} height={42} className="rounded-xl" />
           <span className="text-sm font-bold tracking-tight">Hermes OS</span>
         </div>
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
+          style={{
+            background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 50%, var(--pink) 100%)',
+            boxShadow: '0 0 20px rgba(79, 143, 255, 0.3), 0 0 40px rgba(168, 85, 247, 0.15)',
+          }}
+        >
+          <Menu className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
+        </button>
       </header>
 
       {/* ─── Mobile Fullscreen Overlay ─── */}
@@ -85,7 +89,7 @@ export default function Sidebar() {
             {/* Menu Header */}
             <div className="flex items-center justify-between px-5 h-16 border-b border-[var(--border)] flex-shrink-0">
               <div className="flex items-center gap-3">
-                <Image src="/logo.png" alt="Hermes" width={32} height={32} className="rounded-xl" />
+                <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
                 <div>
                   <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
                   <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
@@ -93,9 +97,13 @@ export default function Sidebar() {
               </div>
               <button
                 onClick={() => setMobileOpen(false)}
-                className="w-10 h-10 rounded-xl bg-[var(--bg-card)] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
+                style={{
+                  background: 'linear-gradient(135deg, var(--danger) 0%, var(--pink) 100%)',
+                  boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)',
+                }}
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
               </button>
             </div>
 
@@ -136,7 +144,7 @@ export default function Sidebar() {
       <aside className="fixed left-0 top-0 bottom-0 z-30 w-[220px] bg-[var(--bg-secondary)]/95 backdrop-blur-xl border-r border-[var(--border)] hidden md:flex flex-col">
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 h-16 flex-shrink-0 border-b border-[var(--border)]">
-          <Image src="/logo.png" alt="Hermes" width={32} height={32} className="rounded-xl" />
+          <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
           <div>
             <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
             <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
