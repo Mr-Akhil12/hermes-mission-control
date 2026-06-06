@@ -2,7 +2,8 @@
 
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Zap, Lock, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Lock, AlertTriangle, ArrowRight } from 'lucide-react'
+import Image from 'next/image'
 
 function LoginForm() {
   const [password, setPassword] = useState('')
@@ -92,8 +93,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--purple)] flex items-center justify-center mx-auto mb-4 glow-blue">
-            <Zap className="w-6 h-6 text-white" />
+          <div className="mx-auto mb-4">
+            <Image src="/logo.png" alt="Hermes" width={72} height={72} className="rounded-2xl mx-auto" style={{ filter: 'drop-shadow(0 0 20px rgba(79, 143, 255, 0.3))' }} />
           </div>
           <h1 className="text-xl font-bold gradient-text">Hermes OS</h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">Mission Control</p>
