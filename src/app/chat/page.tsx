@@ -361,7 +361,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-screen -mt-14 md:mt-0 -mx-4 md:-mx-6 lg:-mx-8 -my-4 md:-my-6 lg:-my-8">
+    <div className="flex h-dvh overflow-hidden -mt-14 md:mt-0 -mx-4 md:-mx-6 lg:-mx-8 -my-4 md:-my-6 lg:-my-8 pt-14 md:pt-0">
       {/* ─── Sidebar: Conversations List ─── */}
       <div className={`
         ${mobileShowSidebar ? 'translate-x-0' : '-translate-x-full'}
