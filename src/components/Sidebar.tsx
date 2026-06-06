@@ -59,13 +59,13 @@ export default function Sidebar() {
     <>
       {/* ─── Mobile Header ─── */}
       <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-16 py-[5px] bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
-        <div className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileOpen(false)}>
           <Image src="/logo.png" alt="Hermes" width={42} height={42} className="rounded-xl" />
           <div>
             <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
             <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
           </div>
-        </div>
+        </Link>
         <button
           onClick={() => setMobileOpen(true)}
           className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
@@ -91,13 +91,13 @@ export default function Sidebar() {
           <div className="absolute inset-0 bg-[var(--bg-secondary)] flex flex-col animate-slide-up">
             {/* Menu Header */}
             <div className="flex items-center justify-between px-5 h-16 border-b border-[var(--border)] flex-shrink-0">
-              <div className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
                 <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
                 <div>
                   <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
                   <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={() => setMobileOpen(false)}
                 className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
@@ -146,13 +146,13 @@ export default function Sidebar() {
       {/* ─── Desktop Sidebar ─── */}
       <aside className="fixed left-0 top-0 bottom-0 z-30 w-[220px] bg-[var(--bg-secondary)]/95 backdrop-blur-xl border-r border-[var(--border)] hidden md:flex flex-col">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 h-16 flex-shrink-0 border-b border-[var(--border)]">
+        <Link href="/" className="flex items-center gap-2.5 px-5 h-16 flex-shrink-0 border-b border-[var(--border)]">
           <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
           <div>
             <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
             <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
           </div>
-        </div>
+        </Link>
 
         {/* Nav */}
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
