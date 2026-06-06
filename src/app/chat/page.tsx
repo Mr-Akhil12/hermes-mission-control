@@ -830,6 +830,39 @@ export default function ChatPage() {
               )}
 
               <div className="flex items-end gap-2">
+                {/* Attachment + Cron buttons */}
+                <div className="flex items-center gap-1 flex-shrink-0 pb-0.5">
+                  <button
+                    onClick={() => {
+                      // File attachment — trigger hidden file input
+                      document.getElementById('chat-file-input')?.click()
+                    }}
+                    className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-all"
+                    title="Attach file"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                  <input
+                    id="chat-file-input"
+                    type="file"
+                    className="hidden"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      if (files.length > 0) {
+                        const fileNames = files.map(f => `[${f.name}]`).join(' ')
+                        setInput(prev => prev ? `${prev} ${fileNames}` : fileNames)
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => { setShowCronPicker(!showCronPicker); setShowSettings(false) }}
+                    className={`p-2 rounded-lg transition-all ${showCronPicker ? 'text-[var(--purple)] bg-[var(--purple)]/10' : 'text-[var(--text-muted)] hover:text-[var(--purple)] hover:bg-[var(--purple)]/10'}`}
+                    title="Attach cron job context"
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
+                </div>
                 <textarea
                   ref={textareaRef}
                   value={input}
