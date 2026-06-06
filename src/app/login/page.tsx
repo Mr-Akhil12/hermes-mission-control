@@ -97,7 +97,7 @@ export default function LoginPage() {
             <Image src="/logo.png" alt="Hermes" width={72} height={72} className="rounded-2xl mx-auto" style={{ filter: 'drop-shadow(0 0 20px rgba(79, 143, 255, 0.3))' }} />
           </div>
           <h1 className="text-xl font-bold gradient-text">Hermes OS</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Mission Control</p>
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">Mission Control</p>
         </div>
 
         <Suspense fallback={

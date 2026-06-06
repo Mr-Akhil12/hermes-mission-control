@@ -62,8 +62,8 @@ export default function Sidebar() {
         <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileOpen(false)}>
           <Image src="/logo.png" alt="Hermes" width={42} height={42} className="rounded-xl" />
           <div>
-            <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
-            <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
+            <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
+            <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
           </div>
         </Link>
         <button
@@ -94,8 +94,8 @@ export default function Sidebar() {
               <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
                 <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
                 <div>
-                  <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
+                  <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
+                  <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
                 </div>
               </Link>
               <button
@@ -149,8 +149,8 @@ export default function Sidebar() {
         <Link href="/" className="flex items-center gap-2.5 px-5 h-16 flex-shrink-0 border-b border-[var(--border)]">
           <Image src="/logo.png" alt="Hermes" width={48} height={48} className="rounded-xl" />
           <div>
-            <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
-            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
+            <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
+            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
           </div>
         </Link>
 
