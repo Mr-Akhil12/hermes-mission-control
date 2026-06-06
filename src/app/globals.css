@@ -144,3 +144,13 @@ body {
   mask-composite: exclude;
   pointer-events: none;
 }
+
+/* Chat page: override parent layout padding */
+main:has(.flex.flex-col.h-\\[100dvh\\]) {
+  padding-top: 0 !important;
+  margin-left: 0 !important;
+}
+main:has(.flex.flex-col.h-\\[100dvh\\]) > div {
+  padding: 0 !important;
+  max-width: none !important;
+}
