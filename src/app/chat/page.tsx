@@ -114,6 +114,7 @@ export default function ChatPage() {
   const [tablesReady, setTablesReady] = useState<boolean | null>(null)
   const [migrationSql, setMigrationSql] = useState<string | null>(null)
   const [migrationCopied, setMigrationCopied] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -215,10 +216,13 @@ export default function ChatPage() {
   const deleteConversation = async (id: string) => {
     try {
       await fetch(`/api/chat/${id}`, { method: 'DELETE' })
+      // Optimistic: remove from state immediately
+      setConversations(prev => prev.filter(c => c.id !== id))
       if (activeConv?.id === id) {
         setActiveConv(null)
       }
-      await loadConversations()
+      setToast('Conversation deleted')
+      setTimeout(() => setToast(null), 3000)
     } catch { /* ignore */ }
   }
 
@@ -323,12 +327,10 @@ export default function ChatPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Handle keyboard shortcuts
+  // Handle keyboard — Enter = newline only, no send
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
+    // Enter alone does nothing special — just default newline behavior
+    // User must click the send button to send
   }
 
   // Auto-resize textarea
@@ -447,7 +449,7 @@ export default function ChatPage() {
       {/* ─── Main Chat Area ─── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat Header */}
-        <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-3 flex-shrink-0 bg-[var(--bg-secondary)]/50 backdrop-blur-sm">
+        <div className="px-4 py-2.5 flex items-center gap-3 flex-shrink-0 bg-[var(--bg-secondary)]/50 backdrop-blur-sm">
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileShowSidebar(true)}
@@ -868,7 +870,7 @@ export default function ChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+                  placeholder="Type a message..."
                   rows={1}
                   className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px]"
                   style={{ minHeight: '42px' }}
@@ -889,6 +891,14 @@ export default function ChatPage() {
           </div>
         )}
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-4 py-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border)] shadow-lg shadow-black/30 animate-slide-up flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
+          <span className="text-sm text-[var(--text-primary)]">{toast}</span>
+        </div>
+      )}
     </div>
   )
 }
