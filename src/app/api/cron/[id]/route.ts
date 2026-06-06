@@ -1,12 +1,18 @@
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { readFileSync, readdirSync, readFileSync as readFileSync2 } from 'fs'
+import { readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
+
+export const dynamic = 'force-dynamic'
 
 const CRON_DIR = join(process.env.HOME || '/home/akhil', '.hermes', 'cron')
 const JOBS_FILE = join(CRON_DIR, 'jobs.json')
 const OUTPUT_DIR = join(CRON_DIR, 'output')
 
-export const dynamic = 'force-dynamic'
+function getSupabase() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null
+  return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+}
 
 interface OutputFile {
   filename: string
@@ -15,101 +21,104 @@ interface OutputFile {
   preview: string
 }
 
-export interface CronDetailResponse {
-  job: {
-    id: string
-    name: string
-    schedule: string
-    schedule_display: string
-    enabled: boolean
-    state: string
-    last_run_at: string | null
-    next_run_at: string | null
-    last_status: string | null
-    last_error: string | null
-    last_delivery_error: string | null
-    deliver: string
-    profile: string
-    created_at: string | null
-    prompt: string
-    script: string | null
-    no_agent: boolean
-    enabled_toolsets: string[]
-    workdir: string | null
-  }
-  outputs: OutputFile[]
-  total_outputs: number
-}
-
-function parseOutputFile(filepath: string, filename: string): OutputFile {
-  // Filename format: 2026-06-05_13-14-28.md
-  const timestampMatch = filename.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/)
-  const timestamp = timestampMatch ? timestampMatch[1].replace('_', ' ') : 'Unknown'
-
-  let size = 0
-  let preview = ''
+function getLocalOutputs(jobId: string): { outputs: OutputFile[]; total: number } {
   try {
-    const stat = require('fs').statSync(filepath)
-    size = stat.size
+    const jobDir = join(OUTPUT_DIR, jobId)
+    const files = readdirSync(jobDir)
+      .filter(f => f.endsWith('.md'))
+      .sort()
+      .reverse()
 
-    // Read first 5KB for preview
-    const content = readFileSync(filepath, 'utf-8')
-    const lines = content.split('\n').slice(0, 100).join('\n')
-    preview = lines.substring(0, 5000)
+    const outputs: OutputFile[] = files.slice(0, 20).map((filename, i) => {
+      const timestampMatch = filename.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/)
+      const timestamp = timestampMatch ? timestampMatch[1].replace('_', ' ') : 'Unknown'
+      let size = 0
+      let preview = ''
+      try {
+        size = statSync(join(jobDir, filename)).size
+        if (i < 5) {
+          preview = readFileSync(join(jobDir, filename), 'utf-8')
+            .split('\n').slice(0, 100).join('\n')
+            .substring(0, 5000)
+        }
+      } catch { /* skip */ }
+      return { filename, timestamp, size, preview }
+    })
+
+    return { outputs, total: files.length }
   } catch {
-    preview = '[Unable to read file]'
+    return { outputs: [], total: 0 }
   }
-
-  return { filename, timestamp, size, preview }
 }
 
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await context.params
+  const { id } = await context.params
 
-    // Read job from jobs.json
+  // Try Supabase first
+  const supabase = getSupabase()
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('cron_jobs')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (!error && data) {
+        // Get local outputs if available
+        const { outputs, total } = getLocalOutputs(id)
+
+        return NextResponse.json({
+          job: {
+            id: data.id,
+            name: data.name,
+            schedule: data.schedule || '',
+            schedule_display: data.schedule_display || data.schedule || '',
+            enabled: data.enabled,
+            state: data.state || 'unknown',
+            last_run_at: data.last_run_at || null,
+            next_run_at: data.next_run_at || null,
+            last_status: data.last_status || null,
+            last_error: data.last_error || null,
+            last_delivery_error: data.last_delivery_error || null,
+            deliver: data.deliver || 'local',
+            profile: data.profile || 'default',
+            created_at: data.created_at || null,
+            prompt: data.prompt || '',
+            script: data.script || null,
+            no_agent: data.no_agent || false,
+            enabled_toolsets: data.enabled_toolsets || [],
+            workdir: data.workdir || null,
+          },
+          outputs,
+          total_outputs: total,
+        })
+      }
+    } catch {
+      // Fall through to local
+    }
+  }
+
+  // Fallback: local filesystem
+  try {
     const raw = readFileSync(JOBS_FILE, 'utf-8')
     const parsed = JSON.parse(raw)
-    const jobs = parsed.jobs || parsed
-    const job = jobs.find((j: { id: string }) => j.id === id)
+    const job = (parsed.jobs || parsed).find((j: Record<string, string>) => j.id === id)
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    const schedule = typeof job.schedule === 'object' ? job.schedule.expr : (job.schedule || '')
+    const schedule = typeof job.schedule === 'object' && job.schedule !== null
+      ? (job.schedule as Record<string, string>).expr
+      : (job.schedule || '')
 
-    // Read output files
-    const outputs: OutputFile[] = []
-    let totalOutputs = 0
-    try {
-      const jobDir = join(OUTPUT_DIR, id)
-      const files = readdirSync(jobDir)
-        .filter(f => f.endsWith('.md'))
-        .sort()
-        .reverse() // Most recent first
+    const { outputs, total } = getLocalOutputs(id)
 
-      totalOutputs = files.length
-
-      // Get last 20 for listing, with preview for last 5
-      const recentFiles = files.slice(0, 20)
-      for (let i = 0; i < recentFiles.length; i++) {
-        const filepath = join(jobDir, recentFiles[i])
-        const output = parseOutputFile(filepath, recentFiles[i])
-        // Only load full preview for the 5 most recent
-        if (i >= 5) {
-          output.preview = '[Preview not loaded]'
-        }
-        outputs.push(output)
-      }
-    } catch {
-      // Output directory may not exist
-    }
-
-    const response: CronDetailResponse = {
+    return NextResponse.json({
       job: {
         id: job.id,
         name: job.name,
@@ -132,10 +141,8 @@ export async function GET(
         workdir: job.workdir || null,
       },
       outputs,
-      total_outputs: totalOutputs,
-    }
-
-    return NextResponse.json(response)
+      total_outputs: total,
+    })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Failed to read cron data'
     return NextResponse.json({ error: msg }, { status: 500 })

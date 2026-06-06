@@ -1,57 +1,17 @@
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { readFileSync, readdirSync, statSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
+
+export const dynamic = 'force-dynamic'
 
 const CRON_DIR = join(process.env.HOME || '/home/akhil', '.hermes', 'cron')
 const JOBS_FILE = join(CRON_DIR, 'jobs.json')
 const OUTPUT_DIR = join(CRON_DIR, 'output')
 
-export const dynamic = 'force-dynamic'
-
-interface HermesCronJob {
-  id: string
-  name: string
-  prompt?: string
-  skills?: string[]
-  script?: string
-  no_agent?: boolean
-  schedule: {
-    kind: string
-    expr: string
-    display: string
-  } | string
-  schedule_display?: string
-  enabled: boolean
-  state: string
-  last_run_at?: string | null
-  next_run_at?: string | null
-  last_status?: string | null
-  last_error?: string | null
-  deliver?: string
-  profile?: string
-  created_at?: string
-  workdir?: string
-  enabled_toolsets?: string[]
-}
-
-export interface CronsListJob {
-  id: string
-  name: string
-  schedule: string
-  schedule_display: string
-  enabled: boolean
-  state: string
-  last_run_at: string | null
-  next_run_at: string | null
-  last_status: string | null
-  last_error: string | null
-  deliver: string
-  profile: string
-  created_at: string | null
-  output_count: number
-  prompt: string
-  script: string | null
-  no_agent: boolean
+function getSupabase() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null
+  return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
 
 function getOutputCount(jobId: string): number {
@@ -64,14 +24,40 @@ function getOutputCount(jobId: string): number {
 }
 
 export async function GET() {
+  // Try Supabase first (works on Vercel)
+  const supabase = getSupabase()
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('cron_jobs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (!error && data && data.length > 0) {
+        // Enrich with local output counts if available
+        const enriched = data.map(job => ({
+          ...job,
+          output_count: getOutputCount(job.id),
+        }))
+        return NextResponse.json(enriched)
+      }
+    } catch {
+      // Fall through to local filesystem
+    }
+  }
+
+  // Fallback: read from local filesystem
   try {
     const raw = readFileSync(JOBS_FILE, 'utf-8')
     const parsed = JSON.parse(raw)
-    const jobs: HermesCronJob[] = parsed.jobs || parsed
+    const jobs = parsed.jobs || parsed
 
-    const enriched: CronsListJob[] = jobs.map(job => {
-      const schedule = typeof job.schedule === 'object' ? job.schedule.expr : (job.schedule || '')
-      const scheduleDisplay = job.schedule_display || schedule
+    const enriched = jobs.map((job: Record<string, unknown>) => {
+      const schedule = typeof job.schedule === 'object' && job.schedule !== null
+        ? (job.schedule as Record<string, string>).expr
+        : (job.schedule as string || '')
+      const scheduleDisplay = (job.schedule_display as string) || schedule
 
       return {
         id: job.id,
@@ -87,7 +73,7 @@ export async function GET() {
         deliver: job.deliver || 'local',
         profile: job.profile || 'default',
         created_at: job.created_at || null,
-        output_count: getOutputCount(job.id),
+        output_count: getOutputCount(job.id as string),
         prompt: job.prompt || '',
         script: job.script || null,
         no_agent: job.no_agent || false,
