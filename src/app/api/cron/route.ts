@@ -23,6 +23,31 @@ function getOutputCount(jobId: string): number {
   }
 }
 
+// Supabase stores schedule as a stringified JSON object like:
+// "{'kind': 'cron', 'expr': '0 * * * *', 'display': '0 * * * *'}"
+// Extract just the cron expression
+function extractSchedule(schedule: unknown): string {
+  if (!schedule) return ''
+  if (typeof schedule === 'string') {
+    // Try to parse as JSON first
+    try {
+      const parsed = JSON.parse(schedule)
+      return parsed.expr || parsed.display || schedule
+    } catch {
+      // Not JSON — try to extract expr from Python-style dict string
+      const exprMatch = schedule.match(/'expr':\s*'([^']+)'/)
+      if (exprMatch) return exprMatch[1]
+      // If it looks like a plain cron expression, return as-is
+      if (/^[\d\*\/\-\s]+$/.test(schedule.trim())) return schedule.trim()
+      return schedule
+    }
+  }
+  if (typeof schedule === 'object' && schedule !== null) {
+    return (schedule as Record<string, string>).expr || (schedule as Record<string, string>).display || ''
+  }
+  return String(schedule)
+}
+
 export async function GET() {
   // Try Supabase first (works on Vercel)
   const supabase = getSupabase()
@@ -35,9 +60,10 @@ export async function GET() {
         .limit(50)
 
       if (!error && data && data.length > 0) {
-        // Enrich with local output counts if available
+        // Enrich with local output counts if available + fix schedule format
         const enriched = data.map(job => ({
           ...job,
+          schedule: extractSchedule(job.schedule),
           output_count: getOutputCount(job.id),
         }))
         return NextResponse.json(enriched)

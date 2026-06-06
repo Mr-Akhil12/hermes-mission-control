@@ -14,6 +14,25 @@ function getSupabase() {
   return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
 
+function extractSchedule(schedule: unknown): string {
+  if (!schedule) return ''
+  if (typeof schedule === 'string') {
+    try {
+      const parsed = JSON.parse(schedule)
+      return parsed.expr || parsed.display || schedule
+    } catch {
+      const exprMatch = schedule.match(/'expr':\s*'([^']+)'/)
+      if (exprMatch) return exprMatch[1]
+      if (/^[\d\*\/\-\s]+$/.test(schedule.trim())) return schedule.trim()
+      return schedule
+    }
+  }
+  if (typeof schedule === 'object' && schedule !== null) {
+    return (schedule as Record<string, string>).expr || (schedule as Record<string, string>).display || ''
+  }
+  return String(schedule)
+}
+
 interface OutputFile {
   filename: string
   timestamp: string
@@ -75,8 +94,8 @@ export async function GET(
           job: {
             id: data.id,
             name: data.name,
-            schedule: data.schedule || '',
-            schedule_display: data.schedule_display || data.schedule || '',
+            schedule: extractSchedule(data.schedule),
+            schedule_display: data.schedule_display || extractSchedule(data.schedule),
             enabled: data.enabled,
             state: data.state || 'unknown',
             last_run_at: data.last_run_at || null,
