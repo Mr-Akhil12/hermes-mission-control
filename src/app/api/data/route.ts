@@ -11,21 +11,34 @@ export async function GET(request: NextRequest) {
   const table = searchParams.get('table')
   const limit = parseInt(searchParams.get('limit') || '20')
   const order = searchParams.get('order') || 'created_at.desc'
+  const id = searchParams.get('id')
+  const jobId = searchParams.get('job_id')
 
   if (!table) {
     return NextResponse.json({ error: 'Table parameter required' }, { status: 400 })
   }
 
-  // Whitelist allowed tables
-  const allowedTables = ['agent_activities', 'tasks', 'sessions', 'cron_jobs']
+  const allowedTables = ['agent_activities', 'tasks', 'sessions', 'cron_jobs', 'cron_runs']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
 
   const [field, direction] = order.split('.')
-  const { data, error } = await supabase
+  let query = supabase
     .from(table)
     .select('*')
+
+  // Filter by specific ID
+  if (id) {
+    query = query.eq('id', id)
+  }
+
+  // Filter by job_id (for cron_runs)
+  if (jobId) {
+    query = query.eq('job_id', jobId)
+  }
+
+  const { data, error } = await query
     .order(field, { ascending: direction === 'asc' })
     .limit(limit)
 
@@ -44,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Table and data required' }, { status: 400 })
   }
 
-  const allowedTables = ['agent_activities', 'tasks']
+  const allowedTables = ['agent_activities', 'tasks', 'cron_jobs', 'cron_runs']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
@@ -70,7 +83,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Table, id, and data required' }, { status: 400 })
   }
 
-  const allowedTables = ['tasks', 'agent_activities']
+  const allowedTables = ['tasks', 'agent_activities', 'cron_jobs', 'cron_runs']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }
@@ -98,7 +111,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Table and id required' }, { status: 400 })
   }
 
-  const allowedTables = ['tasks', 'agent_activities']
+  const allowedTables = ['tasks', 'agent_activities', 'cron_runs']
   if (!allowedTables.includes(table)) {
     return NextResponse.json({ error: 'Invalid table' }, { status: 403 })
   }

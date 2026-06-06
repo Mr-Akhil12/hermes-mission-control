@@ -2,44 +2,50 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import {
-  Activity, Loader2, RefreshCw, Clock, AlertTriangle, CheckCircle2,
-  Timer, Calendar, Settings, TrendingUp, ActivitySquare, Zap
+  Loader2, RefreshCw, Clock, AlertTriangle, Calendar, Settings, Timer,
+  ActivitySquare, TrendingUp, Zap, FileText, ChevronDown, ChevronRight,
+  Terminal, ArrowLeft
 } from 'lucide-react'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
-interface CronJob {
+interface CronJobDetail {
   id: string
   name: string
   schedule: string
-  schedule_display?: string
-  enabled?: boolean
-  state?: string
-  last_run_at?: string | null
-  next_run_at?: string | null
-  last_status?: string | null
-  last_error?: string | null
-  deliver?: string
-  profile?: string
-  created_at?: string
-  updated_at?: string
+  schedule_display: string
+  enabled: boolean
+  state: string
+  last_run_at: string | null
+  next_run_at: string | null
+  last_status: string | null
+  last_error: string | null
+  last_delivery_error: string | null
+  deliver: string
+  profile: string
+  created_at: string | null
+  prompt: string
+  script: string | null
+  no_agent: boolean
+  enabled_toolsets: string[]
+  workdir: string | null
 }
 
-interface CronActivity {
-  id: string
-  agent_name: string
-  action: string
-  details: string | null
-  status: 'running' | 'completed' | 'error'
-  created_at: string
-  metadata?: {
-    job_id?: string
-    job_name?: string
-    [key: string]: unknown
-  }
+interface OutputFile {
+  filename: string
+  timestamp: string
+  size: number
+  preview: string
 }
 
-function timeAgo(dateStr: string) {
+interface CronDetailData {
+  job: CronJobDetail
+  outputs: OutputFile[]
+  total_outputs: number
+}
+
+function timeAgo(dateStr: string | null) {
   if (!dateStr) return '—'
   const s = (Date.now() - new Date(dateStr).getTime()) / 1000
   if (s < 0) return 'Pending'
@@ -49,7 +55,7 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-function timeUntil(dateStr: string) {
+function timeUntil(dateStr: string | null) {
   if (!dateStr) return '—'
   const s = (new Date(dateStr).getTime() - Date.now()) / 1000
   if (s < 0) return 'Overdue'
@@ -65,78 +71,74 @@ function getScheduleHuman(expr: string): string {
   if (expr === '*/15 * * * *') return 'Every 15 min'
   if (expr === '0 */2 * * *') return 'Every 2 hours'
   if (expr === '0 * * * *') return 'Hourly'
-
   const everyNHours = expr.match(/^0 \*\/(\d+) \* \* \*$/)
-  if (everyNHours) {
-    const n = parseInt(everyNHours[1])
-    return `Every ${n} hours`
-  }
-
+  if (everyNHours) return `Every ${everyNHours[1]} hours`
   const dailyMatch = expr.match(/^0 (\d+) \* \* \*$/)
   if (dailyMatch) {
-    const utcHour = parseInt(dailyMatch[1])
-    const saHour = (utcHour + 2) % 24
+    const saHour = (parseInt(dailyMatch[1]) + 2) % 24
     return `Daily at ${saHour}:00 SAST`
   }
-
   const everyNDays = expr.match(/^0 (\d+) \*\/(\d+) \* \*$/)
   if (everyNDays) {
-    const utcHour = parseInt(everyNDays[1])
-    const n = parseInt(everyNDays[2])
-    const saHour = (utcHour + 2) % 24
-    return `Every ${n} days at ${saHour}:00 SAST`
+    const saHour = (parseInt(everyNDays[1]) + 2) % 24
+    return `Every ${everyNDays[2]} days at ${saHour}:00 SAST`
   }
-
   if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
   if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
-
   return expr
 }
 
-export default function CronDetailPage({ params }: { params: { id: string } }) {
-  const [job, setJob] = useState<CronJob | null>(null)
-  const [activities, setActivities] = useState<CronActivity[]>([])
+function formatBytes(bytes: number) {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export default function CronDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const [data, setData] = useState<CronDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [manualTriggering, setManualTriggering] = useState(false)
-  const [triggerSuccess, setTriggerSuccess] = useState<boolean | null>(null)
-  const [outputTab, setOutputTab] = useState<'overview' | 'outputs' | 'history'>('overview')
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'overview' | 'outputs' | 'history'>('overview')
+  const [expandedOutput, setExpandedOutput] = useState<string | null>(null)
+  const [fullContent, setFullContent] = useState<Record<string, string>>({})
+
+  // Resolve params (Next.js 16: params is a Promise)
+  useEffect(() => {
+    params.then(p => setJobId(p.id))
+  }, [params])
 
   const loadData = useCallback(async () => {
+    if (!jobId) return
     try {
       setError(null)
       setLoading(true)
-
-      const jobRes = await fetch(`/api/data?table=cron_jobs&id=${params.id}`)
-      if (!jobRes.ok) throw new Error(`Failed to fetch cron job: ${jobRes.status}`)
-      const jobData = await jobRes.json()
-      setJob(jobData[0] || null)
-
-      const activityRes = await fetch(`/api/data?table=agent_activities&metadata.job_id.eq=${params.id}&limit=20&order=created_at.desc`)
-      if (!activityRes.ok) throw new Error(`Failed to fetch activities: ${activityRes.status}`)
-      const activityData = await activityRes.json()
-      setActivities(activityData || [])
+      const res = await fetch(`/api/cron/${jobId}`)
+      if (!res.ok) {
+        if (res.status === 404) {
+          setError('Cron job not found')
+          return
+        }
+        throw new Error(`HTTP ${res.status}`)
+      }
+      const result = await res.json()
+      setData(result)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [params.id])
+  }, [jobId])
 
-  useEffect(() => { loadData() }, [loadData, params.id])
+  useEffect(() => { loadData() }, [loadData])
 
-  const handleManualTrigger = async () => {
-    setManualTriggering(true)
-    setTriggerSuccess(null)
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      setTriggerSuccess(true)
-      await loadData()
-    } catch (e: unknown) {
-      setTriggerSuccess(false)
-      setError(`Failed to trigger cron: ${e instanceof Error ? e.message : 'Unknown error'}`)
-    } finally {
-      setManualTriggering(false)
+  const loadFullContent = async (filename: string) => {
+    if (fullContent[filename]) return // Already loaded
+    // The preview is already in the data — use it
+    const output = data?.outputs.find(o => o.filename === filename)
+    if (output) {
+      setFullContent(prev => ({ ...prev, [filename]: output.preview }))
     }
   }
 
@@ -148,228 +150,264 @@ export default function CronDetailPage({ params }: { params: { id: string } }) {
     )
   }
 
-  if (error && !job) {
+  if (error || !data) {
     return (
       <div className="rounded-2xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 p-6 text-center">
         <AlertTriangle className="w-8 h-8 text-[var(--danger)] mx-auto mb-2" />
-        <p className="text-sm text-[var(--danger)]">{error}</p>
+        <p className="text-sm text-[var(--danger)]">{error || 'No data'}</p>
+        <Link href="/cron" className="text-xs text-[var(--accent)] mt-3 inline-block hover:underline">← Back to Cron Jobs</Link>
       </div>
     )
   }
 
-  if (!job) {
-    return (
-      <div className="rounded-2xl glass-panel border border-[var(--border)] p-12 text-center">
-        <p className="text-sm text-[var(--text-secondary)]">Cron job not found</p>
-      </div>
-    )
-  }
-
-  const hasError = job.last_status === 'error'
+  const { job, outputs, total_outputs } = data
   const humanSchedule = getScheduleHuman(job.schedule_display || job.schedule || '')
+  const isPaused = !job.enabled
+  const hasError = job.last_status === 'error'
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold gradient-text">{job.name}</h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            {job.enabled ? 'Enabled' : 'Disabled'} ·{' '}
-            {job.profile || 'default'} ·{' '}
-            Deliver to: {job.deliver || 'local'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      {/* Back link + Header */}
+      <div className="animate-slide-up">
+        <Link href="/cron" className="text-xs text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors flex items-center gap-1 mb-3">
+          <ArrowLeft className="w-3 h-3" /> Back to Cron Jobs
+        </Link>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold gradient-text">{job.name}</h1>
+            <p className="text-sm text-[var(--text-muted)] mt-1">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                hasError ? 'bg-[var(--danger)]/10 text-[var(--danger)]' : isPaused ? 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]' : 'bg-[var(--success)]/10 text-[var(--success)]'
+              }`}>
+                {hasError ? 'Error' : isPaused ? 'Paused' : 'Active'}
+              </span>
+              <span className="ml-2">{job.deliver}</span>
+              {job.profile !== 'default' && <span className="ml-2">· {job.profile}</span>}
+            </p>
+          </div>
           <button
-            onClick={handleManualTrigger}
-            disabled={manualTriggering}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl glass-panel border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all ${manualTriggering ? 'opacity-70' : ''}`}
+            onClick={loadData}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl glass-panel border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all self-start"
           >
-            {manualTriggering ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Triggering...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Trigger Now
-              </>
-            )}
+            <RefreshCw className="w-4 h-4" /> Refresh
           </button>
-          {triggerSuccess !== null && (
-            <span className={`text-xs font-medium px-2 py-1 rounded ${triggerSuccess ? 'bg-[var(--success)]/20 text-[var(--success)]' : 'bg-[var(--danger)]/20 text-[var(--danger)]'}`}>
-              {triggerSuccess ? 'Success' : 'Failed'}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-          <div className="flex items-center gap-3">
-            <Calendar className="w-5 h-5 text-[var(--accent)]" />
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
+        <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--accent)]" />
             <div>
-              <p className="text-xs text-[var(--text-muted)] uppercase">Last Run</p>
-              <p className="text-sm font-medium">{job.last_run_at ? timeAgo(job.last_run_at) : 'Never'}</p>
+              <p className="text-[10px] sm:text-xs text-[var(--text-muted)] uppercase">Last Run</p>
+              <p className="text-xs sm:text-sm font-medium">{job.last_run_at ? timeAgo(job.last_run_at) : 'Never'}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-          <div className="flex items-center gap-3">
-            <Timer className="w-5 h-5 text-[var(--accent)]" />
+        <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Timer className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--accent)]" />
             <div>
-              <p className="text-xs text-[var(--text-muted)] uppercase">Next Run</p>
-              <p className="text-sm font-medium">{job.next_run_at ? timeUntil(job.next_run_at) : 'Never scheduled'}</p>
+              <p className="text-[10px] sm:text-xs text-[var(--text-muted)] uppercase">Next Run</p>
+              <p className="text-xs sm:text-sm font-medium">{job.next_run_at ? timeUntil(job.next_run_at) : 'Never'}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-          <div className="flex items-center gap-3">
-            <ActivitySquare className="w-5 h-5 text-[var(--accent)]" />
+        <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ActivitySquare className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--accent)]" />
             <div>
-              <p className="text-xs text-[var(--text-muted)] uppercase">Status</p>
-              <p className="text-sm font-medium">{job.last_status || 'Unknown'}</p>
+              <p className="text-[10px] sm:text-xs text-[var(--text-muted)] uppercase">Status</p>
+              <p className="text-xs sm:text-sm font-medium">{job.last_status || 'Unknown'}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-          <div className="flex items-center gap-3">
-            <TrendingUp className="w-5 h-5 text-[var(--accent)]" />
+        <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--accent)]" />
             <div>
-              <p className="text-xs text-[var(--text-muted)] uppercase">Success Rate</p>
-              <p className="text-sm font-medium">Calculating...</p>
+              <p className="text-[10px] sm:text-xs text-[var(--text-muted)] uppercase">Total Runs</p>
+              <p className="text-xs sm:text-sm font-medium">{total_outputs}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Tabs */}
-      <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+      {/* Tabs */}
+      <div className="border border-[var(--border)] rounded-xl overflow-hidden animate-slide-up" style={{ animationDelay: '120ms' }}>
         <div className="flex border-b border-[var(--border)]">
-          {(['overview', 'outputs', 'history'] as const).map((tab) => (
+          {(['overview', 'outputs', 'history'] as const).map(t => (
             <button
-              key={tab}
-              onClick={() => setOutputTab(tab)}
+              key={t}
+              onClick={() => setTab(t)}
               className={`flex-1 px-4 py-3 text-left text-sm font-medium capitalize transition-all ${
-                outputTab === tab
+                tab === t
                   ? 'bg-[var(--accent)]/10 text-[var(--accent)] border-b-2 border-[var(--accent)]'
                   : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
               }`}
             >
-              {tab}
+              {t}{t === 'outputs' && total_outputs > 0 ? ` (${total_outputs})` : ''}
             </button>
           ))}
         </div>
 
         <div className="p-4">
-          {outputTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Schedule Details */}
-              <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5">
+          {/* Overview tab */}
+          {tab === 'overview' && (
+            <div className="space-y-4">
+              {/* Schedule */}
+              <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-4">
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-2">
                   <Calendar className="w-3 h-3" /> Schedule
                 </p>
-                <div className="space-y-2 mt-2">
-                  <p className="text-sm text-[var(--text-primary)] font-medium">{humanSchedule}</p>
-                  {job.schedule_display && job.schedule !== job.schedule_display && (
-                    <p className="text-[10px] text-[var(--text-muted)] font-mono">{job.schedule}</p>
+                <p className="text-sm text-[var(--text-primary)] font-medium">{humanSchedule}</p>
+                {job.schedule_display && job.schedule !== job.schedule_display && (
+                  <p className="text-[10px] text-[var(--text-muted)] font-mono mt-1">{job.schedule}</p>
+                )}
+              </div>
+
+              {/* Configuration */}
+              <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-4">
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-2">
+                  <Settings className="w-3 h-3" /> Configuration
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <InfoRow label="Profile" value={job.profile || 'default'} />
+                  <InfoRow label="State" value={job.state || 'Unknown'} />
+                  <InfoRow label="Deliver To" value={job.deliver || 'local'} />
+                  <InfoRow label="Created" value={job.created_at ? timeAgo(job.created_at) : 'Unknown'} />
+                  <InfoRow label="Agent" value={job.no_agent ? 'Script only' : 'LLM Agent'} />
+                  {job.script && <InfoRow label="Script" value={job.script} mono />}
+                  {job.workdir && <InfoRow label="Workdir" value={job.workdir} mono />}
+                  {job.enabled_toolsets.length > 0 && (
+                    <InfoRow label="Toolsets" value={job.enabled_toolsets.join(', ')} />
                   )}
                 </div>
               </div>
 
-              {/* Configuration */}
-              <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] p-4">
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5">
-                  <Settings className="w-3 h-3" /> Configuration
-                </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 mt-2">
-                  <div>
-                    <p className="text-xs text-[var(--text-muted)]">Profile</p>
-                    <p className="text-xs text-[var(--text-secondary)]">{job.profile || 'default'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[var(--text-muted)]">State</p>
-                    <p className="text-xs text-[var(--text-secondary)]">{job.state || 'Unknown'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[var(--text-muted)]">Deliver To</p>
-                    <p className="text-xs text-[var(--text-secondary)]">{job.deliver || 'local'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[var(--text-muted)]">Created At</p>
-                    <p className="text-xs text-[var(--text-secondary)]">{job.created_at ? timeAgo(job.created_at) : 'Unknown'}</p>
-                  </div>
+              {/* Errors */}
+              {job.last_error && (
+                <div className="rounded-xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 p-4">
+                  <p className="text-xs text-[var(--danger)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-2">
+                    <AlertTriangle className="w-3 h-3" /> Last Error
+                  </p>
+                  <p className="text-xs text-[var(--danger)]/80 break-words">{job.last_error}</p>
                 </div>
-              </div>
+              )}
 
-              {/* Recent Activity */}
-              <div>
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-3">
-                  <Activity className="w-3 h-3" /> Recent Activity
-                </p>
-                {activities.length > 0 ? (
-                  <div className="max-h-[200px] overflow-y-auto divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
-                    {activities.map((activity) => {
-                      const bgColor = activity.status === 'completed'
-                        ? 'var(--success)'
-                        : activity.status === 'error'
-                          ? 'var(--danger)'
-                          : 'var(--warning)'
-                      const statusText = activity.status === 'completed'
-                        ? 'Completed'
-                        : activity.status === 'error'
-                          ? 'Error'
-                          : 'Running'
+              {job.last_delivery_error && (
+                <div className="rounded-xl bg-[var(--warning)]/5 border border-[var(--warning)]/20 p-4">
+                  <p className="text-xs text-[var(--warning)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-2">
+                    <AlertTriangle className="w-3 h-3" /> Delivery Error
+                  </p>
+                  <p className="text-xs text-[var(--warning)]/80 break-words">{job.last_delivery_error}</p>
+                </div>
+              )}
 
-                      return (
-                        <div key={activity.id} className="px-3 py-2">
-                          <div className="flex items-start gap-3">
-                            <div
-                              className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
-                              style={{ backgroundColor: bgColor, opacity: 0.25 }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold">{activity.agent_name}</p>
-                              <p className="text-[10px] text-[var(--text-secondary)]">{activity.action}</p>
-                              {activity.details && (
-                                <p className="text-[10px] text-[var(--text-muted)]">{activity.details}</p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <div
-                                className="w-2 h-2 rounded-full"
-                                style={{ backgroundColor: bgColor }}
-                              />
-                              <span className="text-xs text-[var(--text-secondary)]">{statusText}</span>
-                            </div>
-                          </div>
+              {/* Prompt preview */}
+              {job.prompt && (
+                <div className="rounded-xl bg-[var(--bg-card)] border border-[var(--border)] p-4">
+                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-medium flex items-center gap-1.5 mb-2">
+                    <Terminal className="w-3 h-3" /> Prompt
+                  </p>
+                  <pre className="text-[10px] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto font-mono">
+                    {job.prompt.substring(0, 2000)}
+                    {job.prompt.length > 2000 && '\n\n... [truncated]'}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Outputs tab */}
+          {tab === 'outputs' && (
+            <div className="space-y-2">
+              {outputs.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
+                  <p className="text-sm text-[var(--text-secondary)]">No outputs yet</p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">Outputs appear here after the job runs</p>
+                </div>
+              ) : (
+                outputs.map((output) => {
+                  const isExpanded = expandedOutput === output.filename
+                  return (
+                    <div key={output.filename} className="rounded-xl border border-[var(--border)] overflow-hidden">
+                      <button
+                        onClick={() => {
+                          if (isExpanded) {
+                            setExpandedOutput(null)
+                          } else {
+                            setExpandedOutput(output.filename)
+                            loadFullContent(output.filename)
+                          }
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] transition-colors text-left"
+                      >
+                        <FileText className="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{output.filename}</p>
+                          <p className="text-[10px] text-[var(--text-muted)]">{output.timestamp}</p>
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-[var(--text-muted)] text-center py-4">No recent activity</p>
-                )}
-              </div>
+                        <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{formatBytes(output.size)}</span>
+                        {isExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                        )}
+                      </button>
+                      {isExpanded && (fullContent[output.filename] || output.preview) && (
+                        <div className="border-t border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+                          <pre className="text-[10px] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
+                            {fullContent[output.filename] || output.preview}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
             </div>
           )}
 
-          {outputTab === 'outputs' && (
+          {/* History tab */}
+          {tab === 'history' && (
             <div>
-              <p className="text-sm text-[var(--text-muted)] mb-3">Recent outputs will be shown here once filesystem access is implemented</p>
-            </div>
-          )}
-
-          {outputTab === 'history' && (
-            <div>
-              <p className="text-sm text-[var(--text-muted)] mb-3">Run history view coming soon</p>
+              {outputs.length === 0 ? (
+                <div className="text-center py-8">
+                  <Clock className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
+                  <p className="text-sm text-[var(--text-secondary)]">No run history</p>
+                </div>
+              ) : (
+                <div className="space-y-1 divide-y divide-[var(--border)]">
+                  {outputs.map((output) => (
+                    <div key={output.filename} className="flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] rounded-lg transition-colors">
+                      <div className="w-2 h-2 rounded-full bg-[var(--success)] flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-[var(--text-primary)]">{output.timestamp}</p>
+                        <p className="text-[10px] text-[var(--text-muted)] truncate">
+                          {output.preview.split('\n').find(l => l.includes('Job ID') || l.includes('# Cron Job'))?.trim() || output.filename}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-[var(--text-muted)]">{formatBytes(output.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-[10px] text-[var(--text-muted)]">{label}</p>
+      <p className={`text-xs text-[var(--text-secondary)] ${mono ? 'font-mono' : ''} break-all`}>{value}</p>
     </div>
   )
 }

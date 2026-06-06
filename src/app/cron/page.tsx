@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Clock, Loader2, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer } from 'lucide-react'
+import { Clock, Loader2, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -10,17 +10,18 @@ interface CronJob {
   id: string
   name: string
   schedule: string
-  schedule_display?: string
-  enabled?: boolean
-  state?: string
-  last_run_at?: string | null
-  next_run_at?: string | null
-  last_status?: string | null
-  last_error?: string | null
-  created_at?: string
+  schedule_display: string
+  enabled: boolean
+  state: string
+  last_run_at: string | null
+  next_run_at: string | null
+  last_status: string | null
+  last_error: string | null
+  deliver: string
+  output_count: number
 }
 
-function timeAgo(dateStr: string) {
+function timeAgo(dateStr: string | null) {
   if (!dateStr) return '—'
   const s = (Date.now() - new Date(dateStr).getTime()) / 1000
   if (s < 0) return 'Pending'
@@ -30,7 +31,7 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-function timeUntil(dateStr: string) {
+function timeUntil(dateStr: string | null) {
   if (!dateStr) return '—'
   const s = (new Date(dateStr).getTime() - Date.now()) / 1000
   if (s < 0) return 'Overdue'
@@ -47,34 +48,22 @@ function getScheduleHuman(expr: string): string {
   if (expr === '0 */2 * * *') return 'Every 2 hours'
   if (expr === '0 * * * *') return 'Hourly'
 
-  // Every N hours: 0 */N * * *
   const everyNHours = expr.match(/^0 \*\/(\d+) \* \* \*$/)
-  if (everyNHours) {
-    const n = parseInt(everyNHours[1])
-    return `Every ${n} hours`
-  }
+  if (everyNHours) return `Every ${everyNHours[1]} hours`
 
-  // Daily at specific hour: 0 H * * *
   const dailyMatch = expr.match(/^0 (\d+) \* \* \*$/)
   if (dailyMatch) {
-    const utcHour = parseInt(dailyMatch[1])
-    const saHour = (utcHour + 2) % 24
+    const saHour = (parseInt(dailyMatch[1]) + 2) % 24
     return `Daily at ${saHour}:00 SAST`
   }
 
-  // Every N days at specific hour: 0 H */N * *
   const everyNDays = expr.match(/^0 (\d+) \*\/(\d+) \* \*$/)
   if (everyNDays) {
-    const utcHour = parseInt(everyNDays[1])
-    const n = parseInt(everyNDays[2])
-    const saHour = (utcHour + 2) % 24
-    return `Every ${n} days at ${saHour}:00 SAST`
+    const saHour = (parseInt(everyNDays[1]) + 2) % 24
+    return `Every ${everyNDays[2]} days at ${saHour}:00 SAST`
   }
 
-  // Weekly: 0 H * * DOW
   if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
-
-  // Monthly: 0 H D * *
   if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
 
   return expr
@@ -84,25 +73,36 @@ export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   const loadData = useCallback(async () => {
     try {
       setError(null)
-      const res = await fetch('/api/data?table=cron_jobs&limit=50&order=created_at.desc')
+      const res = await fetch('/api/cron')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setJobs(data || [])
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(loadData, 30000) // Auto-refresh every 30s
+    return () => clearInterval(interval)
+  }, [loadData])
 
-  const activeJobs = jobs.filter(j => j.enabled !== false)
+  const filtered = jobs.filter(j =>
+    j.name.toLowerCase().includes(search.toLowerCase()) ||
+    j.deliver.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const activeJobs = jobs.filter(j => j.enabled)
   const errorJobs = jobs.filter(j => j.last_status === 'error')
+  const pausedJobs = jobs.filter(j => !j.enabled)
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -111,14 +111,24 @@ export default function CronPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold gradient-text">Cron Jobs</h1>
           <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1">
-            {activeJobs.length} active · {errorJobs.length} with errors
+            {activeJobs.length} active · {pausedJobs.length} paused · {errorJobs.length} errors · {jobs.length} total
           </p>
         </div>
-        <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl glass-panel border border-[var(--border)] text-xs sm:text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all self-start sm:self-auto">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search jobs..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border)] text-xs sm:text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-all w-40 sm:w-48"
+          />
+          <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl glass-panel border border-[var(--border)] text-xs sm:text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all">
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+        </div>
       </div>
 
+      {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-6 h-6 text-[var(--accent)] animate-spin" />
@@ -128,50 +138,84 @@ export default function CronPage() {
           <AlertTriangle className="w-8 h-8 text-[var(--danger)] mx-auto mb-2" />
           <p className="text-sm text-[var(--danger)]">{error}</p>
         </div>
-      ) : jobs.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="rounded-2xl glass-panel border border-[var(--border)] p-12 sm:p-16 text-center">
           <Clock className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-4 opacity-30" />
-          <p className="text-lg font-medium text-[var(--text-secondary)]">No cron jobs found</p>
+          <p className="text-lg font-medium text-[var(--text-secondary)]">
+            {search ? 'No matching jobs' : 'No cron jobs found'}
+          </p>
         </div>
       ) : (
         <div className="grid gap-2 sm:gap-3 animate-slide-up" style={{ animationDelay: '60ms' }}>
-          {jobs.map((job) => {
+          {filtered.map((job) => {
             const expr = job.schedule_display || job.schedule || '—'
             const humanSchedule = getScheduleHuman(expr)
             const hasError = job.last_status === 'error'
+            const isPaused = !job.enabled
+
             return (
-              <div key={job.id} className={`rounded-xl sm:rounded-2xl glass-panel border p-3 sm:p-4 card-hover ${hasError ? 'border-[var(--danger)]/30' : 'border-[var(--border)]'}`}>
+              <Link
+                key={job.id}
+                href={`/cron/${job.id}`}
+                className={`rounded-xl sm:rounded-2xl glass-panel border p-3 sm:p-4 card-hover block ${
+                  hasError ? 'border-[var(--danger)]/30' : isPaused ? 'border-[var(--text-muted)]/20 opacity-70' : 'border-[var(--border)]'
+                }`}
+              >
                 <div className="flex items-start gap-2 sm:gap-3">
                   {/* Icon */}
-                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 ${hasError ? 'bg-[var(--danger)]/10' : 'bg-[var(--accent)]/10'}`}>
-                    {hasError ? <XCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--danger)]" /> : <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--accent)]" />}
+                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    hasError ? 'bg-[var(--danger)]/10' : isPaused ? 'bg-[var(--text-muted)]/10' : 'bg-[var(--accent)]/10'
+                  }`}>
+                    {hasError ? (
+                      <XCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--danger)]" />
+                    ) : isPaused ? (
+                      <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--text-muted)]" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--accent)]" />
+                    )}
                   </div>
-                  {/* Content — takes remaining space, shrinks properly */}
+
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-xs sm:text-sm font-semibold text-[var(--text-primary)] truncate"><Link href={`/cron/${job.id}`}>{job.name}</Link></h3>
+                    <h3 className="text-xs sm:text-sm font-semibold text-[var(--text-primary)] truncate">{job.name}</h3>
                     <p className="text-[10px] sm:text-[11px] text-[var(--text-muted)] mt-0.5">{humanSchedule}</p>
                     {job.last_error && (
                       <p className="text-[10px] sm:text-[11px] text-[var(--danger)]/70 mt-1 break-words leading-relaxed">{job.last_error}</p>
                     )}
-                    {job.last_run_at && (
-                      <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] mt-1 flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" /> Last: {timeAgo(job.last_run_at)}
+                    <div className="flex items-center gap-3 mt-1.5">
+                      {job.last_run_at && (
+                        <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" /> Last: {timeAgo(job.last_run_at)}
+                        </p>
+                      )}
+                      <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1">
+                        <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" /> {job.deliver}
                       </p>
-                    )}
+                    </div>
                   </div>
-                  {/* Status — fixed width, never grows */}
+
+                  {/* Status + Runs */}
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <div className="flex items-center gap-1">
                       {hasError ? (
                         <XCircle className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[var(--danger)]" />
+                      ) : isPaused ? (
+                        <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[var(--text-muted)]/30" />
                       ) : (
                         <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[var(--success)]" />
                       )}
-                      <span className={`text-[9px] sm:text-[10px] uppercase tracking-wider font-medium ${hasError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
-                        {hasError ? 'Error' : 'Active'}
+                      <span className={`text-[9px] sm:text-[10px] uppercase tracking-wider font-medium ${
+                        hasError ? 'text-[var(--danger)]' : isPaused ? 'text-[var(--text-muted)]' : 'text-[var(--success)]'
+                      }`}>
+                        {hasError ? 'Error' : isPaused ? 'Paused' : 'Active'}
                       </span>
                     </div>
-                    {job.next_run_at && (
+                    {job.output_count > 0 && (
+                      <span className="text-[9px] sm:text-[10px] text-[var(--text-muted)]">
+                        {job.output_count} runs
+                      </span>
+                    )}
+                    {job.next_run_at && !isPaused && (
                       <span className="text-[9px] sm:text-[10px] text-[var(--text-muted)] flex items-center gap-0.5 sm:gap-1">
                         <Timer className="w-2 h-2 sm:w-2.5 sm:h-2.5" />
                         {timeUntil(job.next_run_at)}
@@ -179,7 +223,7 @@ export default function CronPage() {
                     )}
                   </div>
                 </div>
-              </div>
+              </Link>
             )
           })}
         </div>
