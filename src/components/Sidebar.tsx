@@ -71,7 +71,6 @@ export default function Sidebar() {
           className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
           style={{
             background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 50%, var(--pink) 100%)',
-            boxShadow: '0 0 20px rgba(79, 143, 255, 0.3), 0 0 40px rgba(168, 85, 247, 0.15)',
           }}
         >
           <Menu className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
