@@ -6,7 +6,8 @@ const supabase = createSupabaseClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const HERMES_API_BASE = process.env.HERMES_API_URL || 'http://127.0.0.1:9119'
+const HERMES_API_BASE = process.env.HERMES_API_URL || 'http://127.0.0.1:8642'
+const HERMES_API_KEY = process.env.HERMES_API_KEY || ''
 
 // GET /api/chat/[id]/messages — list messages for a conversation
 export async function GET(
@@ -155,9 +156,10 @@ export async function POST(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${HERMES_API_KEY}`,
       },
       body: JSON.stringify({
-        model: conversation.model || 'hermes',
+        model: conversation.model || 'hermes-agent',
         messages,
         stream: false,
       }),
