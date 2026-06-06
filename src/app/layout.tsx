@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
 export const metadata: Metadata = {
   title: 'Hermes OS — Mission Control',
-  description: 'Hermes Agent mission control dashboard',
+  description: 'Hermes Agent mission control dashboard — monitor cron jobs, activities, tasks, and system health in real time.',
   icons: {
     icon: [
       { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
@@ -17,6 +17,26 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   manifest: '/manifest.json',
+  openGraph: {
+    title: 'Hermes OS — Mission Control',
+    description: 'Your AI Agent. Your Dashboard. Automate the busywork. Focus on what matters.',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'AgenticBiz — AI Agent Dashboard',
+      },
+    ],
+    type: 'website',
+    siteName: 'Hermes OS',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Hermes OS — Mission Control',
+    description: 'Your AI Agent. Your Dashboard. Automate the busywork. Focus on what matters.',
+    images: ['/og-image.png'],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

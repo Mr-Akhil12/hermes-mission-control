@@ -58,10 +58,13 @@ export default function Sidebar() {
   return (
     <>
       {/* ─── Mobile Header ─── */}
-      <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-14 bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
+      <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-16 py-[5px] bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
         <div className="flex items-center gap-2.5">
           <Image src="/logo.png" alt="Hermes" width={42} height={42} className="rounded-xl" />
-          <span className="text-sm font-bold tracking-tight">Hermes OS</span>
+          <div>
+            <span className="text-sm font-bold tracking-tight block leading-tight">Hermes OS</span>
+            <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest">Mission Control</span>
+          </div>
         </div>
         <button
           onClick={() => setMobileOpen(true)}
