@@ -103,6 +103,9 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<'overview' | 'outputs' | 'history'>('overview')
   const [expandedOutput, setExpandedOutput] = useState<string | null>(null)
   const [fullContent, setFullContent] = useState<Record<string, string>>({})
+  const [activityOutputs, setActivityOutputs] = useState<Array<{ id: string; timestamp: string; status: string; details: string | null; metadata: Record<string, unknown> }>>([])
+  const [activityHistory, setActivityHistory] = useState<Array<{ id: string; timestamp: string; status: string; action: string; session_id?: string; model?: string }>>([])
+  const [activityLoading, setActivityLoading] = useState(false)
 
   // Resolve params (Next.js 16: params is a Promise)
   useEffect(() => {
@@ -132,6 +135,24 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
   }, [jobId])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Fetch activity data when switching to outputs or history tab
+  const loadActivity = useCallback(async () => {
+    if (!jobId || (tab !== 'outputs' && tab !== 'history')) return
+    if (activityOutputs.length > 0 || activityHistory.length > 0) return // Already loaded
+    try {
+      setActivityLoading(true)
+      const res = await fetch(`/api/cron/${jobId}/activity?type=${tab}`)
+      if (res.ok) {
+        const result = await res.json()
+        setActivityOutputs(result.outputs || [])
+        setActivityHistory(result.history || [])
+      }
+    } catch { /* ignore */ }
+    finally { setActivityLoading(false) }
+  }, [jobId, tab, activityOutputs.length, activityHistory.length])
+
+  useEffect(() => { loadActivity() }, [loadActivity])
 
   const loadFullContent = async (filename: string) => {
     if (fullContent[filename]) return // Already loaded
@@ -323,50 +344,91 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
           {/* Outputs tab */}
           {tab === 'outputs' && (
             <div className="space-y-2">
-              {outputs.length === 0 ? (
+              {activityLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 text-[var(--accent)] animate-spin" />
+                </div>
+              ) : activityOutputs.length === 0 && outputs.length === 0 ? (
                 <div className="text-center py-8">
                   <FileText className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
                   <p className="text-sm text-[var(--text-secondary)]">No outputs yet</p>
                   <p className="text-[10px] text-[var(--text-muted)] mt-1">Outputs appear here after the job runs</p>
                 </div>
               ) : (
-                outputs.map((output) => {
-                  const isExpanded = expandedOutput === output.filename
-                  return (
-                    <div key={output.filename} className="rounded-xl border border-[var(--border)] overflow-hidden">
-                      <button
-                        onClick={() => {
-                          if (isExpanded) {
-                            setExpandedOutput(null)
-                          } else {
-                            setExpandedOutput(output.filename)
-                            loadFullContent(output.filename)
-                          }
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] transition-colors text-left"
-                      >
-                        <FileText className="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{output.filename}</p>
-                          <p className="text-[10px] text-[var(--text-muted)]">{output.timestamp}</p>
-                        </div>
-                        <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{formatBytes(output.size)}</span>
-                        {isExpanded ? (
-                          <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <>
+                  {/* Activity-sourced outputs (from Supabase) */}
+                  {activityOutputs.map((output) => {
+                    const isExpanded = expandedOutput === output.id
+                    const filename = (output.metadata?.output_file as string) || output.id
+                    const size = (output.metadata?.output_size as number) || 0
+                    const runTime = output.metadata?.run_timestamp as string || output.timestamp
+                    return (
+                      <div key={output.id} className="rounded-xl border border-[var(--border)] overflow-hidden">
+                        <button
+                          onClick={() => {
+                            if (isExpanded) {
+                              setExpandedOutput(null)
+                            } else {
+                              setExpandedOutput(output.id)
+                              setFullContent(prev => ({ ...prev, [output.id]: output.details || '' }))
+                            }
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] transition-colors text-left"
+                        >
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${output.status === 'error' ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'}`} />
+                          <FileText className="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-[var(--text-primary)] truncate">{filename}</p>
+                            <p className="text-[10px] text-[var(--text-muted)]">{runTime}</p>
+                          </div>
+                          {size > 0 && <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{formatBytes(size)}</span>}
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
+                        </button>
+                        {isExpanded && output.details && (
+                          <div className="border-t border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+                            <pre className="text-[10px] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
+                              {output.details}
+                            </pre>
+                          </div>
                         )}
-                      </button>
-                      {isExpanded && (fullContent[output.filename] || output.preview) && (
-                        <div className="border-t border-[var(--border)] bg-[var(--bg-secondary)] p-3">
-                          <pre className="text-[10px] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
-                            {fullContent[output.filename] || output.preview}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })
+                      </div>
+                    )
+                  })}
+                  {/* Local filesystem outputs (when running locally) */}
+                  {outputs.map((output) => {
+                    const isExpanded = expandedOutput === output.filename
+                    return (
+                      <div key={output.filename} className="rounded-xl border border-[var(--border)] overflow-hidden">
+                        <button
+                          onClick={() => {
+                            if (isExpanded) {
+                              setExpandedOutput(null)
+                            } else {
+                              setExpandedOutput(output.filename)
+                              loadFullContent(output.filename)
+                            }
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] transition-colors text-left"
+                        >
+                          <FileText className="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-[var(--text-primary)] truncate">{output.filename}</p>
+                            <p className="text-[10px] text-[var(--text-muted)]">{output.timestamp}</p>
+                          </div>
+                          <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{formatBytes(output.size)}</span>
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
+                        </button>
+                        {isExpanded && (fullContent[output.filename] || output.preview) && (
+                          <div className="border-t border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+                            <pre className="text-[10px] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
+                              {fullContent[output.filename] || output.preview}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
               )}
             </div>
           )}
@@ -374,21 +436,42 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
           {/* History tab */}
           {tab === 'history' && (
             <div>
-              {outputs.length === 0 ? (
+              {activityLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 text-[var(--accent)] animate-spin" />
+                </div>
+              ) : activityHistory.length === 0 && outputs.length === 0 ? (
                 <div className="text-center py-8">
                   <Clock className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
                   <p className="text-sm text-[var(--text-secondary)]">No run history</p>
                 </div>
               ) : (
                 <div className="space-y-1 divide-y divide-[var(--border)]">
-                  {outputs.map((output) => (
+                  {activityHistory.length > 0 ? activityHistory.map((h) => (
+                    <div key={h.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] rounded-lg transition-colors">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${h.status === 'error' ? 'bg-[var(--danger)]' : h.status === 'running' ? 'bg-[var(--warning)] animate-pulse' : 'bg-[var(--success)]'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-[var(--text-primary)]">
+                          {new Date(h.timestamp).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </p>
+                        <p className="text-[10px] text-[var(--text-muted)]">
+                          {h.action === 'job_executed' ? 'Executed' : h.action}
+                          {h.model && ` · ${h.model}`}
+                          {h.session_id && ` · ${h.session_id.substring(0, 20)}...`}
+                        </p>
+                      </div>
+                      <span className={`text-[9px] uppercase tracking-wider font-medium ${
+                        h.status === 'error' ? 'text-[var(--danger)]' : h.status === 'running' ? 'text-[var(--warning)]' : 'text-[var(--success)]'
+                      }`}>
+                        {h.status}
+                      </span>
+                    </div>
+                  )) : outputs.map((output) => (
                     <div key={output.filename} className="flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-elevated)] rounded-lg transition-colors">
                       <div className="w-2 h-2 rounded-full bg-[var(--success)] flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-[var(--text-primary)]">{output.timestamp}</p>
-                        <p className="text-[10px] text-[var(--text-muted)] truncate">
-                          {output.preview.split('\n').find(l => l.includes('Job ID') || l.includes('# Cron Job'))?.trim() || output.filename}
-                        </p>
+                        <p className="text-[10px] text-[var(--text-muted)] truncate">{output.filename}</p>
                       </div>
                       <span className="text-[10px] text-[var(--text-muted)]">{formatBytes(output.size)}</span>
                     </div>
