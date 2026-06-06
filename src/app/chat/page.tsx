@@ -365,16 +365,17 @@ export default function ChatPage() {
   return (
     <div className="flex h-dvh overflow-hidden -mt-[2%] md:mt-0">
       {/* ─── Sidebar: Conversations List ─── */}
-      <div className={`
-        ${mobileShowSidebar ? 'translate-x-0' : '-translate-x-full'}
-        md:translate-x-0
-        fixed md:relative z-40 md:z-auto
-        w-[280px] md:w-[300px] h-full
-        bg-[var(--bg-secondary)] md:bg-transparent
-        border-r border-[var(--border)]
-        flex flex-col
-        transition-transform duration-200
-      `}>
+      <div
+        className={`
+          ${mobileShowSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          fixed md:relative z-40 md:z-auto
+          w-[280px] md:w-[300px] h-full
+          bg-[var(--bg-secondary)] md:bg-transparent
+          border-r border-[var(--border)]
+          flex flex-col
+          transition-transform duration-200
+        `}
+      >
         {/* Sidebar Header */}
         <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
           <h2 className="text-sm font-semibold gradient-text">Conversations</h2>
