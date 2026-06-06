@@ -308,7 +308,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden -mt-[2%] md:mt-0">
+    <div className="flex -mt-14 md:mt-0 -mx-4 md:-mx-6 lg:-mx-8 -mb-4 md:-mb-6 lg:-mb-8" style={{ height: 'calc(100dvh + 56px)' }}>
       {/* ─── Mobile Sidebar (overlay) ─── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setSidebarOpen(false)}>
