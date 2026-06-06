@@ -829,7 +829,7 @@ export default function ChatPage() {
                 </div>
               )}
 
-              <div className="flex items-end gap-2">
+              <div className="flex items-end gap-2 min-w-0">
                 {/* Attachment + Cron buttons */}
                 <div className="flex items-center gap-1 flex-shrink-0 pb-0.5">
                   <button
@@ -870,7 +870,7 @@ export default function ChatPage() {
                   onKeyDown={handleKeyDown}
                   placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
                   rows={1}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px]"
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px]"
                   style={{ minHeight: '42px' }}
                 />
                 <button
