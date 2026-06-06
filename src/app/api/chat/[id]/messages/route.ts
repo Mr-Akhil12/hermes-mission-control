@@ -46,9 +46,46 @@ export async function POST(
   const { id } = await params
   const body = await request.json()
 
-  const { content, thinking_mode } = body
-  if (!content?.trim()) {
-    return NextResponse.json({ error: 'Message content required' }, { status: 400 })
+  const { content, thinking_mode, files } = body
+  if (!content?.trim() && (!files || files.length === 0)) {
+    return NextResponse.json({ error: 'Message content or files required' }, { status: 400 })
+  }
+
+  // Handle slash commands
+  const trimmedContent = (content || '').trim()
+  if (trimmedContent.startsWith('/')) {
+    const [command, ...args] = trimmedContent.split(' ')
+    const cmd = command.toLowerCase()
+
+    if (cmd === '/clear') {
+      await supabase.from('messages').delete().eq('conversation_id', id)
+      return NextResponse.json({ action: 'clear', message: 'Conversation cleared' })
+    }
+
+    if (cmd === '/model') {
+      const model = args[0] || 'hermes'
+      await supabase.from('conversations').update({ model }).eq('id', id)
+      return NextResponse.json({ action: 'model', model, message: `Switched to ${model}` })
+    }
+
+    if (cmd === '/system') {
+      const systemPrompt = args.join(' ')
+      await supabase.from('conversations').update({ system_prompt: systemPrompt }).eq('id', id)
+      return NextResponse.json({ action: 'system', message: 'System prompt updated' })
+    }
+
+    if (cmd === '/think') {
+      const enabled = args[0] !== 'off'
+      await supabase.from('conversations').update({ thinking_mode: enabled }).eq('id', id)
+      return NextResponse.json({ action: 'think', thinking_mode: enabled, message: `Thinking mode ${enabled ? 'enabled' : 'disabled'}` })
+    }
+
+    if (cmd === '/cron') {
+      // List available cron jobs
+      return NextResponse.json({ action: 'cron_list', message: 'Use the ⏱ button to attach cron jobs' })
+    }
+
+    return NextResponse.json({ action: 'unknown', message: `Unknown command: ${cmd}. Available: /clear, /model, /system, /think, /cron` })
   }
 
   // 1. Get the conversation

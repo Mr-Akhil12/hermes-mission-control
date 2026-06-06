@@ -181,17 +181,39 @@ export default function ChatPage() {
     if (!activeConv || (!input.trim() && attachedFiles.length === 0) || sending) return
     const userMessage = input.trim()
     setInput('')
-    setAttachedFiles([])
     setSending(true)
     setError(null)
+
+    // Upload files first
+    const uploadedFiles: Array<{ url: string; name: string; size: number; type: string }> = []
+    for (const file of attachedFiles) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('conversationId', activeConv.id)
+        const uploadRes = await fetch('/api/chat/upload', { method: 'POST', body: formData })
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json()
+          uploadedFiles.push(uploadData)
+        }
+      } catch { /* continue without this file */ }
+    }
+    setAttachedFiles([])
+
+    // Build message content with file references
+    let fullContent = userMessage
+    if (uploadedFiles.length > 0) {
+      const fileRefs = uploadedFiles.map(f => `[File: ${f.name} (${f.type}, ${(f.size / 1024).toFixed(1)}KB)](${f.url})`).join('\n')
+      fullContent = userMessage ? `${userMessage}\n\n${fileRefs}` : fileRefs
+    }
 
     const optimisticMsg: Message = {
       id: 'temp-' + Date.now(),
       conversation_id: activeConv.id,
       role: 'user',
-      content: userMessage + (attachedFiles.length > 0 ? '\n\n[Attached: ' + attachedFiles.map(f => f.name).join(', ') + ']' : ''),
+      content: fullContent,
       reasoning: null, model: null, tokens_in: null, tokens_out: null, duration_ms: null,
-      metadata: {}, created_at: new Date().toISOString(),
+      metadata: { files: uploadedFiles }, created_at: new Date().toISOString(),
     }
     setActiveConv(prev => prev ? { ...prev, messages: [...(prev.messages || []), optimisticMsg] } : prev)
     setTimeout(scrollToBottom, 50)
@@ -201,12 +223,25 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: optimisticMsg.content,
+          content: fullContent,
           thinking_mode: activeConv.thinking_mode,
-          files: attachedFiles.map(f => ({ name: f.name, size: f.size, type: f.type })),
+          files: uploadedFiles,
         }),
       })
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`)
+
+      const data = await res.json()
+
+      // Handle slash command responses
+      if (data.action) {
+        setToast(data.message)
+        setTimeout(() => setToast(null), 3000)
+        // Refresh conversation to reflect changes
+        await loadConversation(activeConv.id)
+        setSending(false)
+        return
+      }
+
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
       await loadConversation(activeConv.id)
       await loadConversations()
     } catch (e: unknown) {
