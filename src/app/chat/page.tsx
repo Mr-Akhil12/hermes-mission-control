@@ -133,7 +133,6 @@ function ToolCallCard({
 
   return (
     <div className={`rounded-xl border ${config.bg} transition-all overflow-hidden`}>
-      {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2">
         <Wrench className={`w-3.5 h-3.5 ${config.color} ${tool.status === 'executing' || tool.status === 'pending' ? 'animate-spin' : ''}`} />
         <span className="text-xs font-mono font-medium text-[var(--text-primary)] flex-1 truncate">
@@ -148,7 +147,6 @@ function ToolCallCard({
         </button>
       </div>
 
-      {/* Input params (collapsible) */}
       {expanded && (
         <div className="px-3 pb-2">
           <pre className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--bg-primary)] rounded-lg p-2 max-h-32 overflow-auto border border-[var(--border)]">
@@ -157,7 +155,6 @@ function ToolCallCard({
         </div>
       )}
 
-      {/* Approval buttons */}
       {tool.status === 'pending' && (
         <div className="flex items-center gap-2 px-3 pb-2.5 pt-0.5">
           <div className="flex-1 flex items-center gap-1.5">
@@ -175,15 +172,13 @@ function ToolCallCard({
             onClick={() => onReject(tool.call_id)}
             className="px-3 py-1.5 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)] text-[11px] font-medium hover:bg-[var(--danger)]/20 transition-colors flex items-center gap-1"
           >
-            <ShieldX className="w-3 h-3" />
-            Reject
+            <ShieldX className="w-3 h-3" /> Reject
           </button>
           <button
             onClick={() => onApprove(tool.call_id)}
             className="px-3 py-1.5 rounded-lg bg-[var(--success)]/10 border border-[var(--success)]/20 text-[var(--success)] text-[11px] font-medium hover:bg-[var(--success)]/20 transition-colors flex items-center gap-1"
           >
-            <ShieldCheck className="w-3 h-3" />
-            Approve
+            <ShieldCheck className="w-3 h-3" /> Approve
           </button>
         </div>
       )}
@@ -206,13 +201,11 @@ function LiveAssistantMessage({
   return (
     <div className="flex justify-start animate-slide-up">
       <div className="max-w-[85%] w-full rounded-2xl px-4 py-3 bg-[var(--bg-card)] border border-[var(--border)] relative">
-        {/* Streaming glow border */}
         {streaming.status !== 'done' && streaming.status !== 'error' && (
           <div className="absolute inset-0 rounded-2xl border border-[var(--accent)]/30 animate-pulse pointer-events-none" />
         )}
 
         <div className="relative">
-          {/* Header */}
           <div className="flex items-center gap-2 mb-2">
             <Bot className="w-3.5 h-3.5 text-[var(--purple)]" />
             <span className="text-[10px] font-medium text-[var(--purple)]">Hermes</span>
@@ -234,7 +227,6 @@ function LiveAssistantMessage({
             )}
           </div>
 
-          {/* Reasoning block (live) */}
           {streaming.reasoning && (
             <details open={reasoningExpanded} className="mb-2">
               <summary
@@ -253,7 +245,6 @@ function LiveAssistantMessage({
             </details>
           )}
 
-          {/* Tool calls */}
           {streaming.toolCalls.length > 0 && (
             <div className="space-y-2 mb-2">
               {streaming.toolCalls.map(tc => (
@@ -267,7 +258,6 @@ function LiveAssistantMessage({
             </div>
           )}
 
-          {/* Content */}
           {streaming.content && (
             <div
               className="text-sm text-[var(--text-secondary)] leading-relaxed"
@@ -275,12 +265,10 @@ function LiveAssistantMessage({
             />
           )}
 
-          {/* Blinking cursor when streaming */}
           {(streaming.status === 'streaming' || streaming.status === 'thinking') && (
             <span className="inline-block w-1.5 h-4 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
           )}
 
-          {/* Error */}
           {streaming.status === 'error' && streaming.errorMessage && (
             <div className="mt-2 px-3 py-2 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20">
               <p className="text-xs text-[var(--danger)]">{streaming.errorMessage}</p>
@@ -308,7 +296,6 @@ export default function ChatPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
 
-  // Streaming state
   const [streaming, setStreaming] = useState<StreamingState>({
     content: '',
     reasoning: '',
@@ -320,9 +307,12 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+    }
   }, [])
 
   // ─── Data Loading ───
@@ -342,9 +332,14 @@ export default function ChatPage() {
       setActiveConv(await res.json())
       setSidebarOpen(false)
       setStreaming({ content: '', reasoning: '', toolCalls: [], status: 'idle' })
-      setTimeout(scrollToBottom, 100)
+      // Scroll to bottom after loading, with a small delay for render
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+        }
+      }, 150)
     } catch { /* ignore */ }
-  }, [scrollToBottom])
+  }, [])
 
   const loadCronJobs = useCallback(async () => {
     try {
@@ -363,7 +358,6 @@ export default function ChatPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, loadConversations)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
         if (activeConv && payload.new && (payload.new as Message).conversation_id === activeConv.id) {
-          // Only reload if we're not currently streaming
           setStreaming(prev => {
             if (prev.status === 'idle' || prev.status === 'done' || prev.status === 'error') {
               loadConversation(activeConv.id)
@@ -403,7 +397,6 @@ export default function ChatPage() {
 
   // ─── Tool Call Approval ───
   const approveToolCall = async (callId: string) => {
-    // Update local state immediately
     setStreaming(prev => ({
       ...prev,
       toolCalls: prev.toolCalls.map(tc =>
@@ -411,7 +404,6 @@ export default function ChatPage() {
       ),
     }))
 
-    // Notify server
     try {
       await fetch(`/api/chat/${activeConv?.id}/tool-approve`, {
         method: 'POST',
@@ -446,10 +438,8 @@ export default function ChatPage() {
     setSending(true)
     setError(null)
 
-    // Reset streaming state
     setStreaming({ content: '', reasoning: '', toolCalls: [], status: 'thinking' })
 
-    // Upload files first
     const uploadedFiles: Array<{ url: string; name: string; size: number; type: string }> = []
     for (const file of attachedFiles) {
       try {
@@ -465,14 +455,12 @@ export default function ChatPage() {
     }
     setAttachedFiles([])
 
-    // Build message content with file references
     let fullContent = userMessage
     if (uploadedFiles.length > 0) {
       const fileRefs = uploadedFiles.map(f => `[File: ${f.name} (${f.type}, ${(f.size / 1024).toFixed(1)}KB)](${f.url})`).join('\n')
       fullContent = userMessage ? `${userMessage}\n\n${fileRefs}` : fileRefs
     }
 
-    // Add optimistic user message
     const optimisticMsg: Message = {
       id: 'temp-' + Date.now(),
       conversation_id: activeConv.id,
@@ -484,7 +472,6 @@ export default function ChatPage() {
     setActiveConv(prev => prev ? { ...prev, messages: [...(prev.messages || []), optimisticMsg] } : prev)
     setTimeout(scrollToBottom, 50)
 
-    // ─── Start SSE streaming ───
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -517,7 +504,6 @@ export default function ChatPage() {
 
         buffer += decoder.decode(value, { stream: true })
 
-        // Process complete SSE frames
         while (true) {
           const eventIdx = buffer.indexOf('event: ')
           if (eventIdx === -1) break
@@ -595,7 +581,6 @@ export default function ChatPage() {
                 break
             }
           } catch {
-            // If not JSON, treat as raw content for content events
             if (eventType === 'content') {
               setStreaming(prev => ({
                 ...prev,
@@ -609,14 +594,12 @@ export default function ChatPage() {
         scrollToBottom()
       }
 
-      // Stream complete — refresh conversation from DB
       setStreaming(prev => ({ ...prev, status: 'done' }))
       await loadConversation(activeConv.id)
       await loadConversations()
 
     } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') {
-        // User cancelled
         setStreaming(prev => ({ ...prev, status: 'idle' }))
       } else {
         setError(e instanceof Error ? e.message : 'Failed to send')
@@ -625,7 +608,6 @@ export default function ChatPage() {
           status: 'error',
           errorMessage: e instanceof Error ? e.message : 'Failed to send',
         }))
-        // Remove optimistic message
         setActiveConv(prev => prev ? { ...prev, messages: prev.messages?.filter(m => !m.id.startsWith('temp-')) || [] } : prev)
       }
     } finally {
@@ -652,7 +634,6 @@ export default function ChatPage() {
           if (tc.status === 'pending' && tc.approvalCountdown !== undefined && tc.approvalCountdown > 0) {
             const newCountdown = tc.approvalCountdown - 1
             if (newCountdown <= 0) {
-              // Auto-approve
               approveToolCall(tc.call_id)
               return { ...tc, status: 'approved' as const, approvalCountdown: 0 }
             }
@@ -718,7 +699,7 @@ export default function ChatPage() {
           <Plus className="w-3.5 h-3.5" /> New
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-0.5" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
         {sortedConversations.length === 0 ? (
           <div className="text-center py-12 px-4">
             <MessageSquare className="w-10 h-10 text-[var(--text-muted)] mx-auto mb-3 opacity-30" />
@@ -780,9 +761,11 @@ export default function ChatPage() {
         {conversationListContent}
       </div>
 
-      {/* ─── Main Chat Area ─── */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-        {/* ── Chat Header (pinned top) ── */}
+      {/* ─── Main Chat Area ───
+          This is the key: flex-col with explicit height so the messages area
+          can scroll independently. h-full ensures it fills the fixed parent. */}
+      <div className="flex-1 flex flex-col h-full min-h-0">
+        {/* ── Chat Header (pinned top, never shrinks) ── */}
         <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)]">
             <MessageSquare className="w-4 h-4" />
@@ -847,7 +830,7 @@ export default function ChatPage() {
 
         {/* ── Cron Context Picker ── */}
         {showCronPicker && activeConv && (
-          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] max-h-[250px] overflow-y-auto flex-shrink-0">
+          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] max-h-[250px] overflow-y-auto overflow-x-hidden flex-shrink-0" style={{ overscrollBehavior: 'contain' }}>
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold text-[var(--text-secondary)]">Attach Cron Job</h4>
               <button onClick={() => setShowCronPicker(false)}><X className="w-3.5 h-3.5 text-[var(--text-muted)]" /></button>
@@ -878,8 +861,18 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* ── Messages Area (scrollable, fills remaining space) ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
+        {/* ── Messages Area
+            This is the scrollable zone. Key CSS:
+            - flex-1 + min-h-0: allows it to shrink and grow within the flex parent
+            - overflow-y: scroll (not auto): always enables scrolling, even when content fits
+            - overscroll-behavior: contain: prevents scroll chaining to parent/body
+            - Webkit-overflow-scrolling: touch: smooth momentum scroll on iOS
+            - The ref is used for programmatic scroll-to-bottom */}
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-4 py-4"
+          style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
+        >
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="relative w-20 h-20 mx-auto mb-6">
@@ -942,15 +935,15 @@ export default function ChatPage() {
                 />
               )}
 
-              <div ref={messagesEndRef} />
+              {/* Scroll anchor — always at the very bottom */}
+              <div ref={messagesEndRef} className="h-1 flex-shrink-0" />
             </div>
           )}
         </div>
 
-        {/* ── Input Area (pinned bottom) ── */}
+        {/* ── Input Area (pinned bottom, never shrinks) ── */}
         {activeConv && (
           <div className="px-4 py-3 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
-            {/* Attached files */}
             {attachedFiles.length > 0 && (
               <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                 <FileText className="w-3 h-3 text-[var(--accent)]" />
@@ -962,7 +955,6 @@ export default function ChatPage() {
                 ))}
               </div>
             )}
-            {/* Cron context indicators */}
             {activeConv.cron_context?.length > 0 && (
               <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                 <Clock className="w-3 h-3 text-[var(--purple)]" />
