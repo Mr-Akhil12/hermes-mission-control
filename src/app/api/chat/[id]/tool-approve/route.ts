@@ -4,7 +4,7 @@ import { resolveToolCall } from '../messages/route'
 // POST /api/chat/[id]/tool-approve — approve or reject a pending tool call
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string> }>
+  { params }: any
 ) {
   const { id: _conversationId } = await params
   const body = await request.json().catch(() => ({}))
