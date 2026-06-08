@@ -9,20 +9,76 @@ const supabase = createSupabaseClient(
 const HERMES_API_BASE = process.env.HERMES_API_URL || 'http://127.0.0.1:8642'
 const HERMES_API_KEY = process.env.HERMES_API_KEY || ''
 
-// ─── Pending tool call approvals (in-memory, per-process) ───
-// Maps call_id → { resolve, timestamp }
-const pendingToolCalls = new Map<string, { resolve: (approved: boolean) => void, timestamp: number }>()
+// ─── Global pending tool calls map (shared with tool-approve route) ───
+declare global {
+  var __pendingToolCalls: Map<string, {
+    resolve: (approved: boolean) => void
+    timestamp: number
+    resolved: boolean
+  }> | undefined
+}
 
-// Cleanup stale entries (> 60s)
-setInterval(() => {
-  const now = Date.now()
-  for (const [id, entry] of pendingToolCalls) {
-    if (now - entry.timestamp > 60000) {
-      entry.resolve(true) // auto-approve stale calls
-      pendingToolCalls.delete(id)
-    }
+function getPendingToolCalls() {
+  if (!globalThis.__pendingToolCalls) {
+    globalThis.__pendingToolCalls = new Map()
   }
-}, 10000)
+  return globalThis.__pendingToolCalls
+}
+
+// Cleanup stale entries every 10s
+let cleanupInterval: ReturnType<typeof setInterval> | null = null
+function ensureCleanup() {
+  if (cleanupInterval) return
+  cleanupInterval = setInterval(() => {
+    const pending = getPendingToolCalls()
+    const now = Date.now()
+    for (const [id, entry] of pending) {
+      if (now - entry.timestamp > 20000 && !entry.resolved) {
+        entry.resolved = true
+        entry.resolve(true) // auto-approve stale calls after 20s
+        pending.delete(id)
+      }
+    }
+  }, 10000)
+}
+ensureCleanup()
+
+// Helper: wait for tool call approval
+function waitForToolApproval(callId: string): Promise<boolean> {
+  const pending = getPendingToolCalls()
+
+  return new Promise((resolve) => {
+    // If already resolved (shouldn't happen normally), auto-approve
+    const existing = pending.get(callId)
+    if (existing?.resolved) {
+      pending.delete(callId)
+      resolve(true)
+      return
+    }
+
+    pending.set(callId, { resolve, timestamp: Date.now(), resolved: false })
+  })
+}
+
+// Helper: resolve a tool call (called from tool-approve route)
+export function resolveToolCall(callId: string, approved: boolean): boolean {
+  const pending = getPendingToolCalls()
+  const entry = pending.get(callId)
+  if (entry && !entry.resolved) {
+    entry.resolved = true
+    pending.delete(callId)
+    entry.resolve(approved)
+    return true
+  }
+  return false
+}
+
+// SSE encoder helper
+function encodeSSE(event: string, data: string): Uint8Array {
+  const safeData = data.replace(/\n/g, '\\n')
+  const payload = `event: ${event}\ndata: ${safeData}\n\n`
+  return new TextEncoder().encode(payload)
+}
 
 // GET /api/chat/[id]/messages — list messages for a conversation
 export async function GET(
@@ -54,35 +110,6 @@ export async function GET(
   return NextResponse.json(data || [])
 }
 
-// Helper: wait for tool call approval
-async function waitForToolApproval(callId: string): Promise<boolean> {
-  // Check if already resolved (e.g., from a previous request)
-  if (!pendingToolCalls.has(callId)) {
-    // Create a new pending entry and wait
-    return new Promise((resolve) => {
-      pendingToolCalls.set(callId, { resolve, timestamp: Date.now() })
-      // Auto-approve after 15 seconds
-      setTimeout(() => {
-        if (pendingToolCalls.has(callId)) {
-          pendingToolCalls.delete(callId)
-          resolve(true)
-        }
-      }, 15000)
-    })
-  }
-  return new Promise((resolve) => {
-    const entry = pendingToolCalls.get(callId)!
-    entry.resolve = resolve
-    pendingToolCalls.set(callId, { ...entry, timestamp: Date.now() })
-    setTimeout(() => {
-      if (pendingToolCalls.has(callId)) {
-        pendingToolCalls.delete(callId)
-        resolve(true)
-      }
-    }, 15000)
-  })
-}
-
 // POST /api/chat/[id]/messages — send a message and get AI response
 export async function POST(
   request: NextRequest,
@@ -96,7 +123,7 @@ export async function POST(
     return NextResponse.json({ error: 'Message content or files required' }, { status: 400 })
   }
 
-  // Handle slash commands (non-streaming)
+  // ─── Handle slash commands (non-streaming) ───
   const trimmedContent = (content || '').trim()
   if (trimmedContent.startsWith('/')) {
     const [command, ...args] = trimmedContent.split(' ')
@@ -104,6 +131,7 @@ export async function POST(
 
     if (cmd === '/clear') {
       await supabase.from('messages').delete().eq('conversation_id', id)
+      // Return as SSE-style JSON for consistency
       return NextResponse.json({ action: 'clear', message: 'Conversation cleared' })
     }
 
@@ -130,11 +158,14 @@ export async function POST(
     }
 
     if (cmd === '/help') {
-      return NextResponse.json({ action: 'help', message: 'Available commands: /clear, /model &lt;name&gt;, /system &lt;prompt&gt;, /think [on|off], /cron, /help, /status' })
+      return NextResponse.json({
+        action: 'help',
+        message: 'Available commands:\n• /clear — Clear conversation\n• /model <name> — Switch model\n• /system <prompt> — Set system prompt\n• /think [on|off] — Toggle thinking mode\n• /cron — Attach cron job context\n• /status — Connection status\n• /help — Show this help'
+      })
     }
 
     if (cmd === '/status') {
-      return NextResponse.json({ action: 'status', message: `Connected to ${HERMES_API_BASE} • Streaming active` })
+      return NextResponse.json({ action: 'status', message: `Connected to ${HERMES_API_BASE}\n• Streaming: SSE with tool approval\n• Tool calls: auto-approve after 20s\n• Real-time: Supabase + Hermes SSE` })
     }
 
     return NextResponse.json({ action: 'unknown', message: `Unknown command: ${cmd}. Try /help` })
@@ -224,78 +255,54 @@ export async function POST(
 
       if (!hermesResponse.ok) {
         const errText = await hermesResponse.text()
-        return new Response(
-          sseEvent('error', JSON.stringify({ message: `Hermes API error: ${response.status}`, detail: errText.substring(0, 500) })),
-          { status: 502, headers: { 'Content-Type': 'text/event-stream' } }
-        )
-      }
-
-      const reader = hermesResponse.body?.getReader()
-      if (!reader) {
-        return new Response(sseEvent('error', JSON.stringify({ message: 'No response body' })), {
+        const errorPayload = `event: error\ndata: ${JSON.stringify({ message: `Hermes API error: ${hermesResponse.status}`, detail: errText.substring(0, 500) })}\n\n`
+        return new Response(errorPayload, {
           status: 502,
           headers: { 'Content-Type': 'text/event-stream' },
         })
       }
 
-      // Accumulate for saving to DB
+      const reader = hermesResponse.body?.getReader()
+      if (!reader) {
+        return new Response(encodeSSE('error', JSON.stringify({ message: 'No response body from Hermes' })), {
+          status: 502,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      }
+
+      // Track tool calls being streamed in
+      const toolCallAccumulator: Record<string, { id: string, name: string, args: string, emitted: boolean }> = {}
+
       let fullContent = ''
       let fullReasoning = ''
 
       const stream = new ReadableStream({
         async start(controller) {
           const decoder = new TextDecoder()
-          let toolCallBuffer: Record<string, { id: string, name: string, args: string }> = {}
+          let buffer = ''
+          let streamDone = false
 
           try {
-            let buffer = ''
-
-            while (true) {
+            while (!streamDone) {
               const { done, value } = await reader.read()
               if (done) break
 
               buffer += decoder.decode(value, { stream: true })
 
-              // Process complete SSE frames from buffer
+              // Process complete SSE frames
               while (true) {
-                const dataIndex = buffer.indexOf('data: ')
-                if (dataIndex === -1) break
+                const dataIdx = buffer.indexOf('data: ')
+                if (dataIdx === -1) break
 
-                const endIndex = buffer.indexOf('\n\n', dataIndex)
-                if (endIndex === -1) break
+                const endIdx = buffer.indexOf('\n\n', dataIdx)
+                if (endIdx === -1) break
 
-                const raw = buffer.slice(dataIndex + 6, endIndex).trim()
-                buffer = buffer.slice(endIndex + 2)
+                const raw = buffer.slice(dataIdx + 6, endIdx).trim()
+                buffer = buffer.slice(endIdx + 2)
 
                 if (raw === '[DONE]') {
-                  const duration = Date.now() - startTime
-
-                  // Save accumulated message to DB
-                  try {
-                    await supabase.from('messages').insert({
-                      conversation_id: id,
-                      role: 'assistant',
-                      content: fullContent || 'No response generated.',
-                      reasoning: fullReasoning || null,
-                      model: conversation.model,
-                      duration_ms: duration,
-                      metadata: {},
-                    })
-
-                    if (conversation.title === 'New Conversation') {
-                      const title = content.trim().substring(0, 80) + (content.length > 80 ? '...' : '')
-                      await supabase.from('conversations').update({ title }).eq('id', id)
-                    }
-                  } catch (saveErr) {
-                    console.error('[Chat] Failed to save streamed message:', saveErr)
-                  }
-
-                  controller.enqueue(encodeSSE('done', JSON.stringify({
-                    duration_ms: duration,
-                    model: conversation.model,
-                  })))
-                  controller.close()
-                  return
+                  streamDone = true
+                  break
                 }
 
                 try {
@@ -304,78 +311,100 @@ export async function POST(
                   const finishReason = parsed.choices?.[0]?.finish_reason
 
                   if (delta) {
-                    // Content delta
+                    // ── Content delta ──
                     if (delta.content) {
                       fullContent += delta.content
                       controller.enqueue(encodeSSE('content', delta.content))
                     }
 
-                    // Thinking/reasoning delta
-                    const reasoning = delta.reasoning || delta.thinking
+                    // ── Thinking/reasoning delta ──
+                    const reasoning = delta.reasoning || delta.thinking || delta.reasoning_content
                     if (reasoning) {
                       fullReasoning += reasoning
                       controller.enqueue(encodeSSE('thinking', reasoning))
                     }
 
-                    // Tool call delta (OpenAI streaming format)
+                    // ── Tool call delta ──
                     if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
                       for (const tc of delta.tool_calls) {
-                        const tcId = tc.index !== undefined ? `tc-${tc.index}` : tc.id || `tc-${Date.now()}`
+                        const tcIndex = tc.index ?? 0
+                        const tcId = `tc-${tcIndex}`
 
-                        if (!toolCallBuffer[tcId]) {
-                          toolCallBuffer[tcId] = { id: tcId, name: '', args: '' }
+                        if (!toolCallAccumulator[tcId]) {
+                          toolCallAccumulator[tcId] = { id: tcId, name: '', args: '', emitted: false }
                         }
 
                         if (tc.function?.name) {
-                          toolCallBuffer[tcId].name = tc.function.name
+                          toolCallAccumulator[tcId].name = tc.function.name
                         }
                         if (tc.function?.arguments) {
-                          toolCallBuffer[tcId].args += tc.function.arguments
+                          toolCallAccumulator[tcId].args += tc.function.arguments
                         }
 
-                        // When we have a complete tool call (finish_reason or both name+args), emit it
-                        if (finishReason === 'tool_calls' || (toolCallBuffer[tcId].name && tc.function?.arguments)) {
+                        // Check if this tool call is complete
+                        const acc = toolCallAccumulator[tcId]
+                        if (!acc.emitted && acc.name && (finishReason === 'tool_calls' || acc.args.endsWith('}'))) {
+                          acc.emitted = true
+
+                          let parsedArgs: Record<string, unknown> = {}
                           try {
-                            const parsedArgs = JSON.parse(toolCallBuffer[tcId].args || '{}')
-                            controller.enqueue(encodeSSE('tool_call', JSON.stringify({
-                              call_id: tcId,
-                              tool_name: toolCallBuffer[tcId].name,
-                              tool_input: parsedArgs,
-                            })))
+                            parsedArgs = JSON.parse(acc.args || '{}')
+                          } catch {
+                            parsedArgs = { raw: acc.args }
+                          }
 
-                            // Wait for approval BEFORE continuing stream
-                            const approved = await waitForToolApproval(tcId)
+                          // Emit tool_call event
+                          controller.enqueue(encodeSSE('tool_call', JSON.stringify({
+                            call_id: acc.id,
+                            tool_name: acc.name,
+                            tool_input: parsedArgs,
+                          })))
 
-                            controller.enqueue(encodeSSE('tool_approval', JSON.stringify({
-                              call_id: tcId,
-                              approved,
-                            })))
-                          } catch (e) {
-                            // If args aren't valid JSON yet, just emit what we have
-                            controller.enqueue(encodeSSE('tool_call', JSON.stringify({
-                              call_id: tcId,
-                              tool_name: toolCallBuffer[tcId].name || 'unknown',
-                              tool_input: { raw: toolCallBuffer[tcId].args },
-                            })))
+                          // Wait for approval (non-blocking for the HTTP stream — we just pause here)
+                          const approved = await waitForToolApproval(acc.id)
 
-                            await waitForToolApproval(tcId)
-                            controller.enqueue(encodeSSE('tool_approval', JSON.stringify({
-                              call_id: tcId,
-                              approved: true,
-                            })))
+                          // Emit approval result
+                          controller.enqueue(encodeSSE('tool_approval', JSON.stringify({
+                            call_id: acc.id,
+                            approved,
+                          })))
+
+                          if (!approved) {
+                            controller.enqueue(encodeSSE('content', `\n\n[Tool call "${acc.name}" was rejected by user]\n\n`))
+                            fullContent += `\n\n[Tool call "${acc.name}" was rejected by user]\n\n`
                           }
                         }
                       }
                     }
                   }
-                } catch (_) {
-                  // Malformed chunk, skip
+                } catch {
+                  // Malformed SSE chunk, skip
                 }
               }
             }
 
-            // Stream ended without [DONE]
+            // ── Stream finished — save to DB ──
             const duration = Date.now() - startTime
+
+            try {
+              await supabase.from('messages').insert({
+                conversation_id: id,
+                role: 'assistant',
+                content: fullContent || 'No response generated.',
+                reasoning: fullReasoning || null,
+                model: conversation.model,
+                duration_ms: duration,
+                metadata: {},
+              })
+
+              if (conversation.title === 'New Conversation') {
+                const title = content.trim().substring(0, 80) + (content.length > 80 ? '...' : '')
+                await supabase.from('conversations').update({ title }).eq('id', id)
+              }
+            } catch (saveErr) {
+              console.error('[Chat] Failed to save streamed message:', saveErr)
+            }
+
             controller.enqueue(encodeSSE('done', JSON.stringify({
               duration_ms: duration,
               model: conversation.model,
@@ -386,7 +415,6 @@ export async function POST(
             console.error('[Chat] Streaming error:', msg)
             controller.enqueue(encodeSSE('error', JSON.stringify({ message: msg })))
 
-            // Save error to DB
             try {
               await supabase.from('messages').insert({
                 conversation_id: id,
@@ -395,7 +423,7 @@ export async function POST(
                 model: conversation.model,
                 metadata: { error: true },
               })
-            } catch { /* ignore save error */ }
+            } catch { /* ignore */ }
 
             controller.close()
           }
@@ -516,14 +544,4 @@ export async function POST(
       detail: msg,
     }, { status: 502 })
   }
-}
-
-// ─── SSE Helpers ───
-function encodeSSE(event: string, data: string): Uint8Array {
-  const payload = `event: ${event}\ndata: ${data.replace(/\n/g, '\\n')}\n\n`
-  return new TextEncoder().encode(payload)
-}
-
-function sseEvent(event: string, data: string): string {
-  return `event: ${event}\ndata: ${data}\n\n`
 }
