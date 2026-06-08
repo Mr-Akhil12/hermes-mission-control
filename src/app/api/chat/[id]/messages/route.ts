@@ -35,7 +35,7 @@ function ensureCleanup() {
     for (const [id, entry] of pending) {
       if (now - entry.timestamp > 20000 && !entry.resolved) {
         entry.resolved = true
-        entry.resolve(true) // auto-approve stale calls after 20s
+        entry.resolve(true)
         pending.delete(id)
       }
     }
@@ -43,24 +43,19 @@ function ensureCleanup() {
 }
 ensureCleanup()
 
-// Helper: wait for tool call approval
 function waitForToolApproval(callId: string): Promise<boolean> {
   const pending = getPendingToolCalls()
-
   return new Promise((resolve) => {
-    // If already resolved (shouldn't happen normally), auto-approve
     const existing = pending.get(callId)
     if (existing?.resolved) {
       pending.delete(callId)
       resolve(true)
       return
     }
-
     pending.set(callId, { resolve, timestamp: Date.now(), resolved: false })
   })
 }
 
-// Helper: resolve a tool call (called from tool-approve route)
 export function resolveToolCall(callId: string, approved: boolean): boolean {
   const pending = getPendingToolCalls()
   const entry = pending.get(callId)
@@ -73,7 +68,6 @@ export function resolveToolCall(callId: string, approved: boolean): boolean {
   return false
 }
 
-// SSE encoder helper
 function encodeSSE(event: string, data: string): Uint8Array {
   const safeData = data.replace(/\n/g, '\\n')
   const payload = `event: ${event}\ndata: ${safeData}\n\n`
@@ -83,7 +77,7 @@ function encodeSSE(event: string, data: string): Uint8Array {
 // GET /api/chat/[id]/messages — list messages for a conversation
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string> }>
+  { params }: any
 ) {
   const { id } = await params
   const { searchParams } = new URL(request.url)
@@ -113,7 +107,7 @@ export async function GET(
 // POST /api/chat/[id]/messages — send a message and get AI response
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string> }>
+  { params }: any
 ) {
   const { id } = await params
   const body = await request.json()
@@ -123,7 +117,6 @@ export async function POST(
     return NextResponse.json({ error: 'Message content or files required' }, { status: 400 })
   }
 
-  // ─── Handle slash commands (non-streaming) ───
   const trimmedContent = (content || '').trim()
   if (trimmedContent.startsWith('/')) {
     const [command, ...args] = trimmedContent.split(' ')
@@ -131,47 +124,35 @@ export async function POST(
 
     if (cmd === '/clear') {
       await supabase.from('messages').delete().eq('conversation_id', id)
-      // Return as SSE-style JSON for consistency
       return NextResponse.json({ action: 'clear', message: 'Conversation cleared' })
     }
-
     if (cmd === '/model') {
       const model = args[0] || 'hermes'
       await supabase.from('conversations').update({ model }).eq('id', id)
       return NextResponse.json({ action: 'model', model, message: `Switched to ${model}` })
     }
-
     if (cmd === '/system') {
       const systemPrompt = args.join(' ')
       await supabase.from('conversations').update({ system_prompt: systemPrompt }).eq('id', id)
       return NextResponse.json({ action: 'system', message: 'System prompt updated' })
     }
-
     if (cmd === '/think') {
       const enabled = args[0] !== 'off'
       await supabase.from('conversations').update({ thinking_mode: enabled }).eq('id', id)
       return NextResponse.json({ action: 'think', thinking_mode: enabled, message: `Thinking mode ${enabled ? 'enabled' : 'disabled'}` })
     }
-
     if (cmd === '/cron') {
       return NextResponse.json({ action: 'cron_list', message: 'Use the ⏱ button to attach cron jobs' })
     }
-
     if (cmd === '/help') {
-      return NextResponse.json({
-        action: 'help',
-        message: 'Available commands:\n• /clear — Clear conversation\n• /model <name> — Switch model\n• /system <prompt> — Set system prompt\n• /think [on|off] — Toggle thinking mode\n• /cron — Attach cron job context\n• /status — Connection status\n• /help — Show this help'
-      })
+      return NextResponse.json({ action: 'help', message: 'Available commands: /clear, /model <name>, /system <prompt>, /think [on|off], /cron, /status, /help' })
     }
-
     if (cmd === '/status') {
-      return NextResponse.json({ action: 'status', message: `Connected to ${HERMES_API_BASE}\n• Streaming: SSE with tool approval\n• Tool calls: auto-approve after 20s\n• Real-time: Supabase + Hermes SSE` })
+      return NextResponse.json({ action: 'status', message: `Connected to ${HERMES_API_BASE} • Streaming: SSE with tool approval • Tool calls: auto-approve after 20s` })
     }
-
     return NextResponse.json({ action: 'unknown', message: `Unknown command: ${cmd}. Try /help` })
   }
 
-  // ─── Get the conversation ───
   const { data: conversation, error: convError } = await supabase
     .from('conversations')
     .select('*')
@@ -182,7 +163,6 @@ export async function POST(
     return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
   }
 
-  // ─── Save the user message ───
   const { error: userMsgError } = await supabase
     .from('messages')
     .insert({
@@ -196,14 +176,12 @@ export async function POST(
     return NextResponse.json({ error: userMsgError.message }, { status: 500 })
   }
 
-  // ─── Build conversation history ───
   const { data: history } = await supabase
     .from('messages')
     .select('role, content')
     .eq('conversation_id', id)
     .order('created_at', { ascending: true })
 
-  // ─── Build system prompt with cron context ───
   let systemPrompt = conversation.system_prompt || 'You are Hermes, a helpful AI assistant.'
 
   if (conversation.cron_context && Array.isArray(conversation.cron_context) && conversation.cron_context.length > 0) {
@@ -217,7 +195,6 @@ export async function POST(
       if (ctx.last_error) parts.push(`Last Error: ${ctx.last_error}`)
       return parts.join('\n')
     }).join('\n\n---\n\n')
-
     systemPrompt += `\n\n--- CRON JOB CONTEXT ---\nThe user has attached the following cron jobs for reference:\n\n${cronInfo}\n\nYou can help adjust schedules, troubleshoot errors, or discuss the cron jobs above.`
   }
 
@@ -229,16 +206,11 @@ export async function POST(
     })),
   ]
 
-  // ─── Check for streaming request ───
   const url = new URL(request.url)
   const useStreaming = url.searchParams.get('stream') === 'true'
-
   const startTime = Date.now()
 
   if (useStreaming) {
-    // ═══════════════════════════════════════════
-    // STREAMING MODE — SSE response
-    // ═══════════════════════════════════════════
     try {
       const hermesResponse = await fetch(`${HERMES_API_BASE}/v1/chat/completions`, {
         method: 'POST',
@@ -255,11 +227,10 @@ export async function POST(
 
       if (!hermesResponse.ok) {
         const errText = await hermesResponse.text()
-        const errorPayload = `event: error\ndata: ${JSON.stringify({ message: `Hermes API error: ${hermesResponse.status}`, detail: errText.substring(0, 500) })}\n\n`
-        return new Response(errorPayload, {
-          status: 502,
-          headers: { 'Content-Type': 'text/event-stream' },
-        })
+        return new Response(
+          `event: error\ndata: ${JSON.stringify({ message: `Hermes API error: ${hermesResponse.status}`, detail: errText.substring(0, 500) })}\n\n`,
+          { status: 502, headers: { 'Content-Type': 'text/event-stream' } }
+        )
       }
 
       const reader = hermesResponse.body?.getReader()
@@ -270,9 +241,7 @@ export async function POST(
         })
       }
 
-      // Track tool calls being streamed in
       const toolCallAccumulator: Record<string, { id: string, name: string, args: string, emitted: boolean }> = {}
-
       let fullContent = ''
       let fullReasoning = ''
 
@@ -286,24 +255,17 @@ export async function POST(
             while (!streamDone) {
               const { done, value } = await reader.read()
               if (done) break
-
               buffer += decoder.decode(value, { stream: true })
 
-              // Process complete SSE frames
               while (true) {
                 const dataIdx = buffer.indexOf('data: ')
                 if (dataIdx === -1) break
-
                 const endIdx = buffer.indexOf('\n\n', dataIdx)
                 if (endIdx === -1) break
-
                 const raw = buffer.slice(dataIdx + 6, endIdx).trim()
                 buffer = buffer.slice(endIdx + 2)
 
-                if (raw === '[DONE]') {
-                  streamDone = true
-                  break
-                }
+                if (raw === '[DONE]') { streamDone = true; break }
 
                 try {
                   const parsed = JSON.parse(raw)
@@ -311,64 +273,34 @@ export async function POST(
                   const finishReason = parsed.choices?.[0]?.finish_reason
 
                   if (delta) {
-                    // ── Content delta ──
                     if (delta.content) {
                       fullContent += delta.content
                       controller.enqueue(encodeSSE('content', delta.content))
                     }
-
-                    // ── Thinking/reasoning delta ──
                     const reasoning = delta.reasoning || delta.thinking || delta.reasoning_content
                     if (reasoning) {
                       fullReasoning += reasoning
                       controller.enqueue(encodeSSE('thinking', reasoning))
                     }
-
-                    // ── Tool call delta ──
                     if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
                       for (const tc of delta.tool_calls) {
                         const tcIndex = tc.index ?? 0
                         const tcId = `tc-${tcIndex}`
-
                         if (!toolCallAccumulator[tcId]) {
                           toolCallAccumulator[tcId] = { id: tcId, name: '', args: '', emitted: false }
                         }
+                        if (tc.function?.name) toolCallAccumulator[tcId].name = tc.function.name
+                        if (tc.function?.arguments) toolCallAccumulator[tcId].args += tc.function.arguments
 
-                        if (tc.function?.name) {
-                          toolCallAccumulator[tcId].name = tc.function.name
-                        }
-                        if (tc.function?.arguments) {
-                          toolCallAccumulator[tcId].args += tc.function.arguments
-                        }
-
-                        // Check if this tool call is complete
                         const acc = toolCallAccumulator[tcId]
                         if (!acc.emitted && acc.name && (finishReason === 'tool_calls' || acc.args.endsWith('}'))) {
                           acc.emitted = true
-
                           let parsedArgs: Record<string, unknown> = {}
-                          try {
-                            parsedArgs = JSON.parse(acc.args || '{}')
-                          } catch {
-                            parsedArgs = { raw: acc.args }
-                          }
+                          try { parsedArgs = JSON.parse(acc.args || '{}') } catch { parsedArgs = { raw: acc.args } }
 
-                          // Emit tool_call event
-                          controller.enqueue(encodeSSE('tool_call', JSON.stringify({
-                            call_id: acc.id,
-                            tool_name: acc.name,
-                            tool_input: parsedArgs,
-                          })))
-
-                          // Wait for approval (non-blocking for the HTTP stream — we just pause here)
+                          controller.enqueue(encodeSSE('tool_call', JSON.stringify({ call_id: acc.id, tool_name: acc.name, tool_input: parsedArgs })))
                           const approved = await waitForToolApproval(acc.id)
-
-                          // Emit approval result
-                          controller.enqueue(encodeSSE('tool_approval', JSON.stringify({
-                            call_id: acc.id,
-                            approved,
-                          })))
-
+                          controller.enqueue(encodeSSE('tool_approval', JSON.stringify({ call_id: acc.id, approved })))
                           if (!approved) {
                             controller.enqueue(encodeSSE('content', `\n\n[Tool call "${acc.name}" was rejected by user]\n\n`))
                             fullContent += `\n\n[Tool call "${acc.name}" was rejected by user]\n\n`
@@ -377,171 +309,81 @@ export async function POST(
                       }
                     }
                   }
-                } catch {
-                  // Malformed SSE chunk, skip
-                }
+                } catch { /* malformed SSE chunk, skip */ }
               }
             }
 
-            // ── Stream finished — save to DB ──
             const duration = Date.now() - startTime
-
             try {
               await supabase.from('messages').insert({
-                conversation_id: id,
-                role: 'assistant',
-                content: fullContent || 'No response generated.',
-                reasoning: fullReasoning || null,
-                model: conversation.model,
-                duration_ms: duration,
-                metadata: {},
+                conversation_id: id, role: 'assistant', content: fullContent || 'No response generated.',
+                reasoning: fullReasoning || null, model: conversation.model, duration_ms: duration, metadata: {},
               })
-
               if (conversation.title === 'New Conversation') {
                 const title = content.trim().substring(0, 80) + (content.length > 80 ? '...' : '')
                 await supabase.from('conversations').update({ title }).eq('id', id)
               }
-            } catch (saveErr) {
-              console.error('[Chat] Failed to save streamed message:', saveErr)
-            }
+            } catch (saveErr) { console.error('[Chat] Failed to save streamed message:', saveErr) }
 
-            controller.enqueue(encodeSSE('done', JSON.stringify({
-              duration_ms: duration,
-              model: conversation.model,
-            })))
+            controller.enqueue(encodeSSE('done', JSON.stringify({ duration_ms: duration, model: conversation.model })))
             controller.close()
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Stream error'
-            console.error('[Chat] Streaming error:', msg)
             controller.enqueue(encodeSSE('error', JSON.stringify({ message: msg })))
-
             try {
-              await supabase.from('messages').insert({
-                conversation_id: id,
-                role: 'assistant',
-                content: `⚠️ Streaming error: ${msg}`,
-                model: conversation.model,
-                metadata: { error: true },
-              })
+              await supabase.from('messages').insert({ conversation_id: id, role: 'assistant', content: `⚠️ Streaming error: ${msg}`, model: conversation.model, metadata: { error: true } })
             } catch { /* ignore */ }
-
             controller.close()
           }
         },
       })
 
       return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache, no-transform',
-          'Connection': 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        },
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      return NextResponse.json(
-        { error: 'Failed to connect to Hermes gateway', detail: msg },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: 'Failed to connect to Hermes gateway', detail: msg }, { status: 502 })
     }
   }
 
-  // ═══════════════════════════════════════════
-  // NON-STREAMING MODE (backward compat)
-  // ═══════════════════════════════════════════
+  // Non-streaming mode
   try {
     const response = await fetch(`${HERMES_API_BASE}/v1/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${HERMES_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: conversation.model || 'hermes-agent',
-        messages,
-        stream: false,
-      }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${HERMES_API_KEY}` },
+      body: JSON.stringify({ model: conversation.model || 'hermes-agent', messages, stream: false }),
     })
 
     if (!response.ok) {
       const errText = await response.text()
-      console.error('[Chat] Hermes API error:', response.status, errText)
-
-      await supabase.from('messages').insert({
-        conversation_id: id,
-        role: 'assistant',
-        content: `⚠️ Error communicating with Hermes: ${response.status} — ${errText.substring(0, 200)}`,
-        model: conversation.model,
-        metadata: { error: true },
-      })
-
-      return NextResponse.json({
-        error: `Hermes API returned ${response.status}`,
-        detail: errText.substring(0, 500),
-      }, { status: 502 })
+      await supabase.from('messages').insert({ conversation_id: id, role: 'assistant', content: `⚠️ Error: ${response.status} — ${errText.substring(0, 200)}`, model: conversation.model, metadata: { error: true } })
+      return NextResponse.json({ error: `Hermes API returned ${response.status}`, detail: errText.substring(0, 500) }, { status: 502 })
     }
 
     const result = await response.json()
     const duration = Date.now() - startTime
-
     const assistantContent = result.choices?.[0]?.message?.content || 'No response generated.'
     const reasoning = result.choices?.[0]?.message?.reasoning || null
     const usage = result.usage || {}
 
-    const { data: savedMsg, error: saveError } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: id,
-        role: 'assistant',
-        content: assistantContent,
-        reasoning: reasoning,
-        model: result.model || conversation.model,
-        tokens_in: usage.prompt_tokens || null,
-        tokens_out: usage.completion_tokens || null,
-        duration_ms: duration,
-        metadata: {},
-      })
-      .select()
-      .single()
+    const { data: savedMsg, error: saveError } = await supabase.from('messages').insert({
+      conversation_id: id, role: 'assistant', content: assistantContent, reasoning,
+      model: result.model || conversation.model, tokens_in: usage.prompt_tokens || null,
+      tokens_out: usage.completion_tokens || null, duration_ms: duration, metadata: {},
+    }).select().single()
 
-    if (saveError) {
-      console.error('[Chat] Failed to save assistant message:', saveError)
-    }
+    if (saveError) console.error('[Chat] Failed to save assistant message:', saveError)
 
     if (conversation.title === 'New Conversation') {
       const title = content.trim().substring(0, 80) + (content.length > 80 ? '...' : '')
-      await supabase
-        .from('conversations')
-        .update({ title })
-        .eq('id', id)
+      await supabase.from('conversations').update({ title }).eq('id', id)
     }
 
-    return NextResponse.json({
-      message: savedMsg,
-      usage: {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-      },
-      duration_ms: duration,
-      model: result.model,
-    })
+    return NextResponse.json({ message: savedMsg, usage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens }, duration_ms: duration, model: result.model })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[Chat] Gateway connection error:', msg)
-
-    await supabase.from('messages').insert({
-      conversation_id: id,
-      role: 'assistant',
-      content: `⚠️ Could not connect to Hermes gateway at ${HERMES_API_BASE}. Make sure the gateway is running.\n\nError: ${msg}`,
-      model: conversation.model,
-      metadata: { error: true },
-    })
-
-    return NextResponse.json({
-      error: 'Failed to connect to Hermes gateway',
-      detail: msg,
-    }, { status: 502 })
+    await supabase.from('messages').insert({ conversation_id: id, role: 'assistant', content: `⚠️ Could not connect to Hermes gateway at ${HERMES_API_BASE}.\n\nError: ${msg}`, model: conversation.model, metadata: { error: true } })
+    return NextResponse.json({ error: 'Failed to connect to Hermes gateway', detail: msg }, { status: 502 })
   }
 }
