@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import {
   Loader2, Plus, Trash2, Send, Clock, Settings, MessageSquare,
   AlertTriangle, Copy, Check, Paperclip, Brain, RefreshCw, X,
-  Sparkles, Bot, User, FileText, CheckCircle2
+  Sparkles, Bot, User, FileText, CheckCircle2, Wrench, ShieldCheck,
+  ShieldX, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 
@@ -15,6 +16,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// ─── Types ───
 interface Message {
   id: string
   conversation_id: string
@@ -68,6 +70,23 @@ interface CronJob {
   prompt: string
 }
 
+interface ToolCall {
+  call_id: string
+  tool_name: string
+  tool_input: Record<string, unknown>
+  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'done' | 'error'
+  approvalCountdown?: number
+}
+
+interface StreamingState {
+  content: string
+  reasoning: string
+  toolCalls: ToolCall[]
+  status: 'idle' | 'thinking' | 'streaming' | 'tool_wait' | 'done' | 'error'
+  errorMessage?: string
+}
+
+// ─── Helpers ───
 function timeAgo(dateStr: string) {
   if (!dateStr) return '—'
   const s = (Date.now() - new Date(dateStr).getTime()) / 1000
@@ -88,6 +107,192 @@ function renderMarkdown(text: string) {
     .replace(/\n/g, '<br />')
 }
 
+// ─── Tool Call Card Component ───
+function ToolCallCard({
+  tool,
+  onApprove,
+  onReject,
+}: {
+  tool: ToolCall
+  onApprove: (callId: string) => void
+  onReject: (callId: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const statusConfig = {
+    pending: { icon: Loader2, color: 'text-[var(--warning)]', bg: 'bg-[var(--warning)]/10 border-[var(--warning)]/20', label: 'Awaiting approval...' },
+    approved: { icon: ShieldCheck, color: 'text-[var(--success)]', bg: 'bg-[var(--success)]/10 border-[var(--success)]/20', label: 'Approved' },
+    rejected: { icon: ShieldX, color: 'text-[var(--danger)]', bg: 'bg-[var(--danger)]/10 border-[var(--danger)]/20', label: 'Rejected by user' },
+    executing: { icon: Loader2, color: 'text-[var(--accent)]', bg: 'bg-[var(--accent)]/10 border-[var(--accent)]/20', label: 'Executing...' },
+    done: { icon: CheckCircle2, color: 'text-[var(--success)]', bg: 'bg-[var(--success)]/10 border-[var(--success)]/20', label: 'Complete' },
+    error: { icon: AlertTriangle, color: 'text-[var(--danger)]', bg: 'bg-[var(--danger)]/10 border-[var(--danger)]/20', label: 'Error' },
+  }
+
+  const config = statusConfig[tool.status]
+  const StatusIcon = config.icon
+
+  return (
+    <div className={`rounded-xl border ${config.bg} transition-all overflow-hidden`}>
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Wrench className={`w-3.5 h-3.5 ${config.color} ${tool.status === 'executing' || tool.status === 'pending' ? 'animate-spin' : ''}`} />
+        <span className="text-xs font-mono font-medium text-[var(--text-primary)] flex-1 truncate">
+          {tool.tool_name}
+        </span>
+        <span className={`text-[10px] ${config.color} flex items-center gap-1`}>
+          <StatusIcon className="w-3 h-3" />
+          {config.label}
+        </span>
+        <button onClick={() => setExpanded(!expanded)} className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {/* Input params (collapsible) */}
+      {expanded && (
+        <div className="px-3 pb-2">
+          <pre className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--bg-primary)] rounded-lg p-2 max-h-32 overflow-auto border border-[var(--border)]">
+            {JSON.stringify(tool.tool_input, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {/* Approval buttons */}
+      {tool.status === 'pending' && (
+        <div className="flex items-center gap-2 px-3 pb-2.5 pt-0.5">
+          <div className="flex-1 flex items-center gap-1.5">
+            <div className="h-1 flex-1 rounded-full bg-[var(--border)] overflow-hidden">
+              <div
+                className="h-full bg-[var(--warning)] transition-all duration-1000 ease-linear rounded-full"
+                style={{ width: `${((tool.approvalCountdown || 0) / 20) * 100}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-[var(--text-muted)] font-mono w-8 text-right">
+              {tool.approvalCountdown || 20}s
+            </span>
+          </div>
+          <button
+            onClick={() => onReject(tool.call_id)}
+            className="px-3 py-1.5 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)] text-[11px] font-medium hover:bg-[var(--danger)]/20 transition-colors flex items-center gap-1"
+          >
+            <ShieldX className="w-3 h-3" />
+            Reject
+          </button>
+          <button
+            onClick={() => onApprove(tool.call_id)}
+            className="px-3 py-1.5 rounded-lg bg-[var(--success)]/10 border border-[var(--success)]/20 text-[var(--success)] text-[11px] font-medium hover:bg-[var(--success)]/20 transition-colors flex items-center gap-1"
+          >
+            <ShieldCheck className="w-3 h-3" />
+            Approve
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Live Assistant Message (streaming) ───
+function LiveAssistantMessage({
+  streaming,
+  onApproveTool,
+  onRejectTool,
+}: {
+  streaming: StreamingState
+  onApproveTool: (callId: string) => void
+  onRejectTool: (callId: string) => void
+}) {
+  const [reasoningExpanded, setReasoningExpanded] = useState(true)
+
+  return (
+    <div className="flex justify-start animate-slide-up">
+      <div className="max-w-[85%] w-full rounded-2xl px-4 py-3 bg-[var(--bg-card)] border border-[var(--border)] relative">
+        {/* Streaming glow border */}
+        {streaming.status !== 'done' && streaming.status !== 'error' && (
+          <div className="absolute inset-0 rounded-2xl border border-[var(--accent)]/30 animate-pulse pointer-events-none" />
+        )}
+
+        <div className="relative">
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-2">
+            <Bot className="w-3.5 h-3.5 text-[var(--purple)]" />
+            <span className="text-[10px] font-medium text-[var(--purple)]">Hermes</span>
+            {streaming.status === 'thinking' && (
+              <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                <Brain className="w-3 h-3" /> Thinking...
+              </span>
+            )}
+            {streaming.status === 'streaming' && (
+              <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                Generating...
+              </span>
+            )}
+            {streaming.status === 'tool_wait' && (
+              <span className="text-[10px] text-[var(--warning)] flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Waiting for tool approval...
+              </span>
+            )}
+          </div>
+
+          {/* Reasoning block (live) */}
+          {streaming.reasoning && (
+            <details open={reasoningExpanded} className="mb-2">
+              <summary
+                className="text-[10px] text-[var(--text-muted)] cursor-pointer flex items-center gap-1 list-none"
+                onClick={() => setReasoningExpanded(!reasoningExpanded)}
+              >
+                <Brain className="w-3 h-3 text-[var(--purple)]" />
+                <span className="text-[var(--purple)]">Thinking</span>
+                {reasoningExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </summary>
+              <div className="mt-1.5 px-3 py-2 rounded-lg bg-[var(--purple)]/5 border-l-2 border-[var(--purple)]/40">
+                <p className="text-[11px] text-[var(--text-muted)] italic whitespace-pre-wrap leading-relaxed">
+                  {streaming.reasoning}
+                </p>
+              </div>
+            </details>
+          )}
+
+          {/* Tool calls */}
+          {streaming.toolCalls.length > 0 && (
+            <div className="space-y-2 mb-2">
+              {streaming.toolCalls.map(tc => (
+                <ToolCallCard
+                  key={tc.call_id}
+                  tool={tc}
+                  onApprove={onApproveTool}
+                  onReject={onRejectTool}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Content */}
+          {streaming.content && (
+            <div
+              className="text-sm text-[var(--text-secondary)] leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(streaming.content) }}
+            />
+          )}
+
+          {/* Blinking cursor when streaming */}
+          {(streaming.status === 'streaming' || streaming.status === 'thinking') && (
+            <span className="inline-block w-1.5 h-4 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
+          )}
+
+          {/* Error */}
+          {streaming.status === 'error' && streaming.errorMessage && (
+            <div className="mt-2 px-3 py-2 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20">
+              <p className="text-xs text-[var(--danger)]">{streaming.errorMessage}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Chat Page ───
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConv, setActiveConv] = useState<Conversation | null>(null)
@@ -103,14 +308,24 @@ export default function ChatPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
 
+  // Streaming state
+  const [streaming, setStreaming] = useState<StreamingState>({
+    content: '',
+    reasoning: '',
+    toolCalls: [],
+    status: 'idle',
+  })
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
+  // ─── Data Loading ───
   const loadConversations = useCallback(async () => {
     try {
       const res = await fetch('/api/chat?limit=50')
@@ -126,6 +341,7 @@ export default function ChatPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setActiveConv(await res.json())
       setSidebarOpen(false)
+      setStreaming({ content: '', reasoning: '', toolCalls: [], status: 'idle' })
       setTimeout(scrollToBottom, 100)
     } catch { /* ignore */ }
   }, [scrollToBottom])
@@ -140,19 +356,27 @@ export default function ChatPage() {
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => { loadCronJobs() }, [loadCronJobs])
 
+  // ─── Supabase Realtime ───
   useEffect(() => {
     const channel = supabase
       .channel('chat-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, loadConversations)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
         if (activeConv && payload.new && (payload.new as Message).conversation_id === activeConv.id) {
-          loadConversation(activeConv.id)
+          // Only reload if we're not currently streaming
+          setStreaming(prev => {
+            if (prev.status === 'idle' || prev.status === 'done' || prev.status === 'error') {
+              loadConversation(activeConv.id)
+            }
+            return prev
+          })
         }
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [loadConversations, loadConversation, activeConv])
 
+  // ─── Conversation CRUD ───
   const createConversation = async () => {
     try {
       const res = await fetch('/api/chat', {
@@ -177,12 +401,53 @@ export default function ChatPage() {
     } catch { /* ignore */ }
   }
 
+  // ─── Tool Call Approval ───
+  const approveToolCall = async (callId: string) => {
+    // Update local state immediately
+    setStreaming(prev => ({
+      ...prev,
+      toolCalls: prev.toolCalls.map(tc =>
+        tc.call_id === callId ? { ...tc, status: 'approved' as const, approvalCountdown: 0 } : tc
+      ),
+    }))
+
+    // Notify server
+    try {
+      await fetch(`/api/chat/${activeConv?.id}/tool-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ call_id: callId, approved: true }),
+      })
+    } catch { /* ignore */ }
+  }
+
+  const rejectToolCall = async (callId: string) => {
+    setStreaming(prev => ({
+      ...prev,
+      toolCalls: prev.toolCalls.map(tc =>
+        tc.call_id === callId ? { ...tc, status: 'rejected' as const, approvalCountdown: 0 } : tc
+      ),
+    }))
+
+    try {
+      await fetch(`/api/chat/${activeConv?.id}/tool-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ call_id: callId, approved: false }),
+      })
+    } catch { /* ignore */ }
+  }
+
+  // ─── Send Message (Streaming) ───
   const sendMessage = async () => {
     if (!activeConv || (!input.trim() && attachedFiles.length === 0) || sending) return
     const userMessage = input.trim()
     setInput('')
     setSending(true)
     setError(null)
+
+    // Reset streaming state
+    setStreaming({ content: '', reasoning: '', toolCalls: [], status: 'thinking' })
 
     // Upload files first
     const uploadedFiles: Array<{ url: string; name: string; size: number; type: string }> = []
@@ -207,6 +472,7 @@ export default function ChatPage() {
       fullContent = userMessage ? `${userMessage}\n\n${fileRefs}` : fileRefs
     }
 
+    // Add optimistic user message
     const optimisticMsg: Message = {
       id: 'temp-' + Date.now(),
       conversation_id: activeConv.id,
@@ -218,8 +484,12 @@ export default function ChatPage() {
     setActiveConv(prev => prev ? { ...prev, messages: [...(prev.messages || []), optimisticMsg] } : prev)
     setTimeout(scrollToBottom, 50)
 
+    // ─── Start SSE streaming ───
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      const res = await fetch(`/api/chat/${activeConv.id}/messages`, {
+      const res = await fetch(`/api/chat/${activeConv.id}/messages?stream=true`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -227,32 +497,183 @@ export default function ChatPage() {
           thinking_mode: activeConv.thinking_mode,
           files: uploadedFiles,
         }),
+        signal: controller.signal,
       })
 
-      const data = await res.json()
-
-      // Handle slash command responses
-      if (data.action) {
-        setToast(data.message)
-        setTimeout(() => setToast(null), 3000)
-        // Refresh conversation to reflect changes
-        await loadConversation(activeConv.id)
-        setSending(false)
-        return
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || errData.error || `HTTP ${res.status}`)
       }
 
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Process complete SSE frames
+        while (true) {
+          const eventIdx = buffer.indexOf('event: ')
+          if (eventIdx === -1) break
+
+          const dataIdx = buffer.indexOf('data: ', eventIdx)
+          if (dataIdx === -1) break
+
+          const endIdx = buffer.indexOf('\n\n', dataIdx)
+          if (endIdx === -1) break
+
+          const eventType = buffer.slice(eventIdx + 7, dataIdx).trim()
+          const rawData = buffer.slice(dataIdx + 6, endIdx).trim()
+          buffer = buffer.slice(endIdx + 2)
+
+          try {
+            const data = JSON.parse(rawData)
+
+            switch (eventType) {
+              case 'thinking':
+                setStreaming(prev => ({
+                  ...prev,
+                  reasoning: prev.reasoning + rawData,
+                  status: 'thinking',
+                }))
+                break
+
+              case 'content':
+                setStreaming(prev => ({
+                  ...prev,
+                  content: prev.content + rawData,
+                  status: 'streaming',
+                }))
+                break
+
+              case 'tool_call':
+                setStreaming(prev => {
+                  const existing = prev.toolCalls.find(tc => tc.call_id === data.call_id)
+                  if (existing) return prev
+                  return {
+                    ...prev,
+                    toolCalls: [...prev.toolCalls, {
+                      call_id: data.call_id,
+                      tool_name: data.tool_name,
+                      tool_input: data.tool_input || {},
+                      status: 'pending' as const,
+                      approvalCountdown: 20,
+                    }],
+                    status: 'tool_wait',
+                  }
+                })
+                break
+
+              case 'tool_approval':
+                setStreaming(prev => ({
+                  ...prev,
+                  toolCalls: prev.toolCalls.map(tc =>
+                    tc.call_id === data.call_id
+                      ? { ...tc, status: data.approved ? 'approved' as const : 'rejected' as const, approvalCountdown: 0 }
+                      : tc
+                  ),
+                  status: data.approved ? 'streaming' : prev.status,
+                }))
+                break
+
+              case 'done':
+                setStreaming(prev => ({ ...prev, status: 'done' }))
+                break
+
+              case 'error':
+                setStreaming(prev => ({
+                  ...prev,
+                  status: 'error',
+                  errorMessage: data.message || 'Unknown error',
+                }))
+                break
+            }
+          } catch {
+            // If not JSON, treat as raw content for content events
+            if (eventType === 'content') {
+              setStreaming(prev => ({
+                ...prev,
+                content: prev.content + rawData,
+                status: 'streaming',
+              }))
+            }
+          }
+        }
+
+        scrollToBottom()
+      }
+
+      // Stream complete — refresh conversation from DB
+      setStreaming(prev => ({ ...prev, status: 'done' }))
       await loadConversation(activeConv.id)
       await loadConversations()
+
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to send')
-      setActiveConv(prev => prev ? { ...prev, messages: prev.messages?.filter(m => !m.id.startsWith('temp-')) || [] } : prev)
+      if (e instanceof Error && e.name === 'AbortError') {
+        // User cancelled
+        setStreaming(prev => ({ ...prev, status: 'idle' }))
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to send')
+        setStreaming(prev => ({
+          ...prev,
+          status: 'error',
+          errorMessage: e instanceof Error ? e.message : 'Failed to send',
+        }))
+        // Remove optimistic message
+        setActiveConv(prev => prev ? { ...prev, messages: prev.messages?.filter(m => !m.id.startsWith('temp-')) || [] } : prev)
+      }
     } finally {
       setSending(false)
+      abortRef.current = null
       textareaRef.current?.focus()
     }
   }
 
+  // ─── Cancel streaming ───
+  const cancelStreaming = () => {
+    abortRef.current?.abort()
+    setStreaming({ content: '', reasoning: '', toolCalls: [], status: 'idle' })
+    setSending(false)
+  }
+
+  // ─── Tool approval countdown timer ───
+  useEffect(() => {
+    if (streaming.status !== 'tool_wait') return
+
+    const interval = setInterval(() => {
+      setStreaming(prev => {
+        const updated = prev.toolCalls.map(tc => {
+          if (tc.status === 'pending' && tc.approvalCountdown !== undefined && tc.approvalCountdown > 0) {
+            const newCountdown = tc.approvalCountdown - 1
+            if (newCountdown <= 0) {
+              // Auto-approve
+              approveToolCall(tc.call_id)
+              return { ...tc, status: 'approved' as const, approvalCountdown: 0 }
+            }
+            return { ...tc, approvalCountdown: newCountdown }
+          }
+          return tc
+        })
+
+        const stillPending = updated.some(tc => tc.status === 'pending')
+        return {
+          ...prev,
+          toolCalls: updated,
+          status: stillPending ? 'tool_wait' as const : 'streaming' as const,
+        }
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [streaming.status])
+
+  // ─── Other handlers ───
   const toggleCronContext = async (job: CronJob) => {
     if (!activeConv) return
     const current = activeConv.cron_context || []
@@ -276,10 +697,6 @@ export default function ChatPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Enter alone = newline. Send button only.
-  }
-
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -292,7 +709,7 @@ export default function ChatPage() {
     [conversations]
   )
 
-  // Conversation list content (shared between mobile and desktop)
+  // ─── Conversation list (shared mobile/desktop) ───
   const conversationListContent = (
     <>
       <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
@@ -327,9 +744,10 @@ export default function ChatPage() {
     </>
   )
 
+  // ─── Loading state ───
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center">
+      <div className="fixed inset-0 z-50 bg-[var(--bg-primary)] flex items-center justify-center">
         <div className="text-center">
           <div className="relative w-16 h-16 mx-auto mb-4">
             <div className="absolute inset-0 rounded-full border-2 border-[var(--accent)]/20" />
@@ -342,11 +760,14 @@ export default function ChatPage() {
     )
   }
 
+  // ═══════════════════════════════════════════
+  // MAIN RENDER — Full-bleed fixed layout
+  // ═══════════════════════════════════════════
   return (
-    <div className="flex flex-col h-[100dvh] md:h-screen overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)]">
       {/* ─── Mobile Sidebar (overlay) ─── */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden" onClick={() => setSidebarOpen(false)}>
+        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setSidebarOpen(false)}>
           <div className="absolute inset-0 bg-black/60" />
           <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-[var(--bg-secondary)] border-r border-[var(--border)] flex flex-col" onClick={e => e.stopPropagation()}>
             {conversationListContent}
@@ -360,9 +781,9 @@ export default function ChatPage() {
       </div>
 
       {/* ─── Main Chat Area ─── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Chat Header */}
-        <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)]">
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        {/* ── Chat Header (pinned top) ── */}
+        <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)]">
             <MessageSquare className="w-4 h-4" />
           </button>
@@ -374,8 +795,19 @@ export default function ChatPage() {
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[10px] text-[var(--text-muted)]">{activeConv.messages?.length || 0} messages</span>
                   {activeConv.cron_context?.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--purple)]/10 text-[var(--purple)] border border-[var(--purple)]/20">⏱ {activeConv.cron_context.length}</span>}
+                  {sending && streaming.status !== 'idle' && (
+                    <span className="text-[10px] text-[var(--accent)] flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                      {streaming.status === 'thinking' ? 'Thinking' : streaming.status === 'tool_wait' ? 'Tool wait' : 'Streaming'}
+                    </span>
+                  )}
                 </div>
               </div>
+              {sending && (
+                <button onClick={cancelStreaming} className="p-2 rounded-lg text-[var(--warning)] hover:bg-[var(--warning)]/10 transition-colors" title="Cancel">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
               <button onClick={() => { setShowCronPicker(!showCronPicker); setShowSettings(false) }} className={`p-2 rounded-lg transition-colors ${showCronPicker ? 'bg-[var(--purple)]/10 text-[var(--purple)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-card)]'}`} title="Attach cron job">
                 <Clock className="w-4 h-4" />
               </button>
@@ -388,9 +820,9 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Settings Panel */}
+        {/* ── Settings Panel ── */}
         {showSettings && activeConv && (
-          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)]">
+          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold text-[var(--text-secondary)]">Settings</h4>
               <button onClick={() => setShowSettings(false)}><X className="w-3.5 h-3.5 text-[var(--text-muted)]" /></button>
@@ -413,9 +845,9 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Cron Context Picker */}
+        {/* ── Cron Context Picker ── */}
         {showCronPicker && activeConv && (
-          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] max-h-[250px] overflow-y-auto">
+          <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] max-h-[250px] overflow-y-auto flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold text-[var(--text-secondary)]">Attach Cron Job</h4>
               <button onClick={() => setShowCronPicker(false)}><X className="w-3.5 h-3.5 text-[var(--text-muted)]" /></button>
@@ -437,17 +869,17 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Error Banner */}
+        {/* ── Error Banner ── */}
         {error && (
-          <div className="mx-4 mt-3 px-4 py-2.5 rounded-xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 flex items-center gap-2">
+          <div className="mx-4 mt-3 px-4 py-2.5 rounded-xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 flex items-center gap-2 flex-shrink-0">
             <AlertTriangle className="w-4 h-4 text-[var(--danger)]" />
             <p className="text-xs text-[var(--danger)] flex-1">{error}</p>
             <button onClick={() => setError(null)}><X className="w-3.5 h-3.5 text-[var(--danger)]" /></button>
           </div>
         )}
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* ── Messages Area (scrollable, fills remaining space) ── */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="relative w-20 h-20 mx-auto mb-6">
@@ -457,18 +889,21 @@ export default function ChatPage() {
                 </div>
               </div>
               <h2 className="text-lg font-bold gradient-text mb-2">Chat with Hermes</h2>
-              <p className="text-sm text-[var(--text-muted)] text-center max-w-md mb-6">Start a conversation with your AI assistant. Attach cron job context, adjust system prompts, and switch models.</p>
+              <p className="text-sm text-[var(--text-muted)] text-center max-w-md mb-2">Real-time streaming with thinking blocks, tool calls, and live approval.</p>
+              <p className="text-xs text-[var(--text-muted)] text-center max-w-md mb-6">Type <code className="px-1.5 py-0.5 rounded bg-[var(--bg-card)] text-[var(--accent)] font-mono">/help</code> for available commands.</p>
               <button onClick={createConversation} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white text-sm font-medium hover:opacity-90 transition-opacity">
                 <Plus className="w-4 h-4" /> Start Conversation
               </button>
             </div>
-          ) : (activeConv.messages || []).length === 0 ? (
+          ) : (activeConv.messages || []).length === 0 && !sending ? (
             <div className="flex flex-col items-center justify-center h-full">
               <Sparkles className="w-12 h-12 text-[var(--accent)]/30 mb-4" />
               <p className="text-sm text-[var(--text-muted)]">Send a message to start</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">Thinking blocks and tool calls appear in real-time</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-4">
+              {/* Completed messages */}
               {(activeConv.messages || []).map(msg => (
                 <div key={msg.id} className={`animate-slide-up group ${msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
                   <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'bg-[var(--accent)]/10 border border-[var(--accent)]/20' : 'bg-[var(--bg-card)] border border-[var(--border)]'}`}>
@@ -497,28 +932,24 @@ export default function ChatPage() {
                   </div>
                 </div>
               ))}
-              {sending && (
-                <div className="flex justify-start animate-slide-up">
-                  <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Bot className="w-3.5 h-3.5 text-[var(--purple)]" />
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 rounded-full bg-[var(--purple)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <div className="w-2 h-2 rounded-full bg-[var(--purple)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <div className="w-2 h-2 rounded-full bg-[var(--purple)] animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+
+              {/* Live streaming message */}
+              {sending && (streaming.content || streaming.reasoning || streaming.toolCalls.length > 0 || streaming.status === 'thinking') && (
+                <LiveAssistantMessage
+                  streaming={streaming}
+                  onApproveTool={approveToolCall}
+                  onRejectTool={rejectToolCall}
+                />
               )}
+
               <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
-        {/* Input Area */}
+        {/* ── Input Area (pinned bottom) ── */}
         {activeConv && (
-          <div className="px-4 py-3 border-t border-[var(--border)] flex-shrink-0">
+          <div className="px-4 py-3 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
             {/* Attached files */}
             {attachedFiles.length > 0 && (
               <div className="flex items-center gap-1.5 mb-2 flex-wrap">
@@ -553,16 +984,37 @@ export default function ChatPage() {
                   <Clock className="w-4 h-4" />
                 </button>
               </div>
-              <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Type a message..." rows={1} className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px]" style={{ minHeight: '42px' }} />
-              <button onClick={sendMessage} disabled={(!input.trim() && attachedFiles.length === 0) || sending} className="p-2.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && (input.trim() || attachedFiles.length > 0)) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                placeholder={sending ? 'Streaming...' : 'Type a message... (/help for commands)'}
+                rows={1}
+                disabled={sending}
+                className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px] disabled:opacity-50"
+                style={{ minHeight: '42px' }}
+              />
+              {sending ? (
+                <button onClick={cancelStreaming} className="p-2.5 rounded-xl bg-[var(--warning)]/20 text-[var(--warning)] hover:bg-[var(--warning)]/30 transition-colors flex-shrink-0" title="Cancel">
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <button onClick={sendMessage} disabled={!input.trim() && attachedFiles.length === 0} className="p-2.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Toast */}
+      {/* ── Toast ── */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-4 py-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border)] shadow-lg shadow-black/30 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
