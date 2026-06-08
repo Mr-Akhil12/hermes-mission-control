@@ -55,6 +55,8 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  /* Prevent body scroll when chat is full-bleed */
+  overflow: hidden;
 }
 
 /* Glow effects */
@@ -145,12 +147,30 @@ body {
   pointer-events: none;
 }
 
-/* Chat page: override parent layout padding */
-main:has(.flex.flex-col.h-\\[100dvh\\]) {
+/* Chat page: override parent layout padding — force full-bleed */
+main:has(.fixed.inset-0.z-50) {
   padding-top: 0 !important;
   margin-left: 0 !important;
+  max-width: none !important;
 }
-main:has(.flex.flex-col.h-\\[100dvh\\]) > div {
+main:has(.fixed.inset-0.z-50) > div {
   padding: 0 !important;
   max-width: none !important;
+}
+
+/* Chat scroll container — prevent scroll chaining */
+.chat-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+/* Blinking cursor for streaming */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.streaming-cursor {
+  animation: blink-cursor 1s step-end infinite;
 }
