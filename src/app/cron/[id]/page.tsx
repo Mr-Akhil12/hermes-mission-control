@@ -107,7 +107,7 @@ function downloadFile(filename: string, content: string) {
   URL.revokeObjectURL(url)
 }
 
-export default function CronDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CronDetailPage({ params }: any) {
   const [data, setData] = useState<CronDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

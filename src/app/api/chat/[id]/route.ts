@@ -9,7 +9,7 @@ const supabase = createSupabaseClient(
 // GET /api/chat/[id] — get conversation with messages
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: any
 ) {
   const { id } = await params
 
@@ -35,7 +35,7 @@ export async function GET(
 // PATCH /api/chat/[id] — update conversation
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: any
 ) {
   const { id } = await params
   const body = await request.json()
@@ -67,7 +67,7 @@ export async function PATCH(
 // DELETE /api/chat/[id] — delete conversation + messages
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: any
 ) {
   const { id } = await params
 
