@@ -24,6 +24,7 @@ function getPendingToolCalls() {
   return globalThis.__pendingToolCalls
 }
 
+// Cleanup stale tool call entries (no auto-approve — user must decide)
 let cleanupInterval: ReturnType<typeof setInterval> | null = null
 function ensureCleanup() {
   if (cleanupInterval) return
@@ -31,13 +32,14 @@ function ensureCleanup() {
     const pending = getPendingToolCalls()
     const now = Date.now()
     for (const [id, entry] of pending) {
-      if (now - entry.timestamp > 20000 && !entry.resolved) {
+      // Clean up entries older than 5 minutes (no longer pending)
+      if (now - entry.timestamp > 300000 && !entry.resolved) {
         entry.resolved = true
-        entry.resolve(true)
+        entry.resolve(false) // Reject stale approvals — user did not respond
         pending.delete(id)
       }
     }
-  }, 10000)
+  }, 30000)
 }
 ensureCleanup()
 
@@ -104,35 +106,44 @@ export async function POST(
   }
 
   const trimmedContent = (content || '').trim()
+  const useStreaming = new URL(request.url).searchParams.get('stream') === 'true'
+
   if (trimmedContent.startsWith('/')) {
     const [command, ...args] = trimmedContent.split(' ')
     const cmd = command.toLowerCase()
 
+    let result: { action: string; message: string; [key: string]: unknown }
+
     if (cmd === '/clear') {
       await supabase.from('messages').delete().eq('conversation_id', id)
-      return NextResponse.json({ action: 'clear', message: 'Conversation cleared' })
-    }
-    if (cmd === '/model') {
-      const model = args[0] || 'hermes'
+      result = { action: 'clear', message: 'Conversation cleared' }
+    } else if (cmd === '/model') {
+      const model = args[0] || 'hermes-agent'
       await supabase.from('conversations').update({ model }).eq('id', id)
-      return NextResponse.json({ action: 'model', model, message: `Switched to ${model}` })
-    }
-    if (cmd === '/system') {
+      result = { action: 'model', model, message: `Switched to ${model}` }
+    } else if (cmd === '/system') {
       await supabase.from('conversations').update({ system_prompt: args.join(' ') }).eq('id', id)
-      return NextResponse.json({ action: 'system', message: 'System prompt updated' })
-    }
-    if (cmd === '/think') {
+      result = { action: 'system', message: 'System prompt updated' }
+    } else if (cmd === '/think') {
       const enabled = args[0] !== 'off'
       await supabase.from('conversations').update({ thinking_mode: enabled }).eq('id', id)
-      return NextResponse.json({ action: 'think', thinking_mode: enabled, message: `Thinking mode ${enabled ? 'enabled' : 'disabled'}` })
+      result = { action: 'think', thinking_mode: enabled, message: `Thinking mode ${enabled ? 'enabled' : 'disabled'}` }
+    } else if (cmd === '/help') {
+      result = { action: 'help', message: 'Available: /clear, /model, /system, /think, /cron, /status, /help' }
+    } else if (cmd === '/status') {
+      result = { action: 'status', message: `Connected to ${HERMES_API_BASE}` }
+    } else {
+      result = { action: 'unknown', message: `Unknown: ${cmd}. Try /help` }
     }
-    if (cmd === '/help') {
-      return NextResponse.json({ action: 'help', message: 'Available: /clear, /model, /system, /think, /cron, /status, /help' })
+
+    // Return as SSE when streaming is requested, JSON otherwise
+    if (useStreaming) {
+      const sseBody = encodeSSE('content', result.message) + encodeSSE('done', JSON.stringify({ duration_ms: 0 }))
+      return new Response(sseBody, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform' },
+      })
     }
-    if (cmd === '/status') {
-      return NextResponse.json({ action: 'status', message: `Connected to ${HERMES_API_BASE}` })
-    }
-    return NextResponse.json({ action: 'unknown', message: `Unknown: ${cmd}. Try /help` })
+    return NextResponse.json(result)
   }
 
   const { data: conversation, error: convError } = await supabase
@@ -171,29 +182,42 @@ export async function POST(
     ...(history || []).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
   ]
 
-  const useStreaming = new URL(request.url).searchParams.get('stream') === 'true'
   const startTime = Date.now()
 
   if (useStreaming) {
     try {
-      const hermesResponse = await fetch(`${HERMES_API_BASE}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${HERMES_API_KEY}` },
-        body: JSON.stringify({ model: conversation.model || 'hermes-agent', messages, stream: true }),
-      })
+      let hermesResponse: Response
+      try {
+        hermesResponse = await fetch(`${HERMES_API_BASE}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${HERMES_API_KEY}` },
+          body: JSON.stringify({ model: conversation.model || 'hermes-agent', messages, stream: true }),
+        })
+      } catch (fetchErr: unknown) {
+        const detail = fetchErr instanceof Error ? fetchErr.message : 'Connection refused'
+        return new Response(
+          encodeSSE('error', JSON.stringify({ message: `Cannot reach Hermes API at ${HERMES_API_BASE}`, detail })) +
+          encodeSSE('done', JSON.stringify({ duration_ms: Date.now() - startTime })),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform' } }
+        )
+      }
 
       if (!hermesResponse.ok) {
         const errText = await hermesResponse.text()
-        return new Response(encodeSSE('error', JSON.stringify({ message: `Hermes API error: ${hermesResponse.status}`, detail: errText.substring(0, 500) })), {
-          status: 502, headers: { 'Content-Type': 'text/event-stream' },
-        })
+        return new Response(
+          encodeSSE('error', JSON.stringify({ message: `Hermes API error: ${hermesResponse.status}`, detail: errText.substring(0, 500) })) +
+          encodeSSE('done', JSON.stringify({ duration_ms: Date.now() - startTime })),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform' } }
+        )
       }
 
       const reader = hermesResponse.body?.getReader()
       if (!reader) {
-        return new Response(encodeSSE('error', JSON.stringify({ message: 'No response body' })), {
-          status: 502, headers: { 'Content-Type': 'text/event-stream' },
-        })
+        return new Response(
+          encodeSSE('error', JSON.stringify({ message: 'Hermes API returned an empty response body' })) +
+          encodeSSE('done', JSON.stringify({ duration_ms: Date.now() - startTime })),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform' } }
+        )
       }
 
       let fullContent = ''
@@ -237,10 +261,23 @@ export async function POST(
                     fullContent += delta.content
                     controller.enqueue(encodeSSE('content', delta.content))
                   }
-                  const reasoning = delta?.reasoning || delta?.thinking
+                  // Handle all known thinking/reasoning formats from different providers
+                  const reasoning = delta?.reasoning || delta?.thinking || delta?.reasoning_content || delta?.thinking_content
                   if (reasoning) {
                     fullReasoning += reasoning
                     controller.enqueue(encodeSSE('thinking', reasoning))
+                  }
+                  // Some providers use tool_calls in delta
+                  if (delta?.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                      if (tc.id && tc.function?.name) {
+                        controller.enqueue(encodeSSE('tool_call', JSON.stringify({
+                          call_id: tc.id,
+                          tool_name: tc.function.name,
+                          tool_input: tc.function.arguments ? (() => { try { return JSON.parse(tc.function.arguments) } catch { return {} } })() : {},
+                        })))
+                      }
+                    }
                   }
                 } catch { /* skip malformed */ }
               }
@@ -258,7 +295,11 @@ export async function POST(
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      return NextResponse.json({ error: 'Failed to connect to Hermes gateway', detail: msg }, { status: 502 })
+      return new Response(
+        encodeSSE('error', JSON.stringify({ message: `Failed to connect to Hermes gateway: ${msg}` })) +
+        encodeSSE('done', JSON.stringify({ duration_ms: Date.now() - startTime })),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform' } }
+      )
     }
   }
 

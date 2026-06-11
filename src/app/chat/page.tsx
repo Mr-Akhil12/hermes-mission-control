@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Loader2, Plus, Trash2, Send, Clock, Settings, MessageSquare,
   AlertTriangle, Copy, Check, Paperclip, Brain, RefreshCw, X,
   Sparkles, Bot, User, FileText, CheckCircle2, Wrench, ShieldCheck,
-  ShieldX, ChevronDown, ChevronRight
+  ShieldX, ChevronDown, ChevronRight, Search, Pencil, ArrowDown
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 
@@ -98,13 +99,101 @@ function timeAgo(dateStr: string) {
 
 function renderMarkdown(text: string) {
   if (!text) return ''
-  return text
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-[var(--bg-primary)] rounded-xl p-4 my-3 overflow-x-auto border border-[var(--border)]"><code class="text-xs font-mono text-[var(--text-secondary)]">$2</code></pre>')
-    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--accent)] text-xs font-mono border border-[var(--border)]">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-[var(--text-primary)]">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em class="italic">$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-[var(--accent)] hover:underline">$1</a>')
-    .replace(/\n/g, '<br />')
+  
+  // Process line by line for block-level elements, then apply inline
+  const lines = text.split('\n')
+  const result: string[] = []
+  let inCodeBlock = false
+  let codeBlockLang = ''
+  let codeLines: string[] = []
+  let inUl = false
+  let inOl = false
+
+  const inlineMd = (s: string) =>
+    s
+      .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--accent)] text-xs font-mono border border-[var(--border)]">$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-[var(--text-primary)]">$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em class="italic">$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-[var(--accent)] hover:underline">$1</a>')
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    // Fenced code blocks
+    if (line.trimStart().startsWith('```')) {
+      if (inCodeBlock) {
+        result.push(`<pre class="bg-[var(--bg-primary)] rounded-xl p-4 my-3 overflow-x-auto border border-[var(--border)]"><code class="text-xs font-mono text-[var(--text-secondary)]">${codeLines.join('\n')}</code></pre>`)
+        inCodeBlock = false
+        codeLines = []
+      } else {
+        inCodeBlock = true
+        codeBlockLang = line.trim().slice(3).trim()
+        if (inUl) { result.push('</ul>'); inUl = false }
+        if (inOl) { result.push('</ol>'); inOl = false }
+      }
+      continue
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+      continue
+    }
+
+    // Horizontal rules
+    if (/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(line)) {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (inOl) { result.push('</ol>'); inOl = false }
+      result.push('<hr class="my-4 border-[var(--border)]" />')
+      continue
+    }
+
+    // Blockquotes
+    if (line.startsWith('>')) {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (inOl) { result.push('</ol>'); inOl = false }
+      const content = line.replace(/^>\s?/, '')
+      result.push(`<blockquote class="pl-3 py-1 my-2 border-l-2 border-[var(--accent)]/40 text-[var(--text-muted)] italic text-sm">${inlineMd(content)}</blockquote>`)
+      continue
+    }
+
+    // Unordered lists
+    const ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/)
+    if (ulMatch) {
+      if (inOl) { result.push('</ol>'); inOl = false }
+      if (!inUl) { result.push('<ul class="list-disc pl-5 my-2 space-y-1 text-sm text-[var(--text-secondary)]">'); inUl = true }
+      result.push(`<li>${inlineMd(ulMatch[2])}</li>`)
+      continue
+    }
+
+    // Ordered lists
+    const olMatch = line.match(/^(\s*)\d+\.\s+(.*)/)
+    if (olMatch) {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (!inOl) { result.push('<ol class="list-decimal pl-5 my-2 space-y-1 text-sm text-[var(--text-secondary)]">'); inOl = true }
+      result.push(`<li>${inlineMd(olMatch[2])}</li>`)
+      continue
+    }
+
+    // Close any open lists
+    if (inUl) { result.push('</ul>'); inUl = false }
+    if (inOl) { result.push('</ol>'); inOl = false }
+
+    // Regular text line
+    if (line.trim() === '') {
+      result.push('<br />')
+    } else {
+      result.push(`<span>${inlineMd(line)}</span>`)
+    }
+  }
+
+  // Close any open structures
+  if (inUl) result.push('</ul>')
+  if (inOl) result.push('</ol>')
+  if (inCodeBlock) {
+    result.push(`<pre class="bg-[var(--bg-primary)] rounded-xl p-4 my-3 overflow-x-auto border border-[var(--border)]"><code class="text-xs font-mono text-[var(--text-secondary)]">${codeLines.join('\n')}</code></pre>`)
+  }
+
+  return result.join('\n')
 }
 
 // ─── Tool Call Card Component ───
@@ -281,7 +370,8 @@ function LiveAssistantMessage({
 }
 
 // ─── Main Chat Page ───
-export default function ChatPage() {
+function ChatPageInner() {
+  const searchParams = useSearchParams()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConv, setActiveConv] = useState<Conversation | null>(null)
   const [loading, setLoading] = useState(true)
@@ -295,6 +385,9 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [convSearch, setConvSearch] = useState('')
+  const [editingTitle, setEditingTitle] = useState<string | null>(null)
+  const [titleValue, setTitleValue] = useState('')
 
   const [streaming, setStreaming] = useState<StreamingState>({
     content: '',
@@ -308,11 +401,21 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [isNearBottom, setIsNearBottom] = useState(true)
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+      setIsNearBottom(true)
     }
+  }, [])
+
+  // Track scroll position to show/hide scroll-to-bottom FAB
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setIsNearBottom(distanceFromBottom < 100)
   }, [])
 
   // ─── Data Loading ───
@@ -350,6 +453,14 @@ export default function ChatPage() {
 
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => { loadCronJobs() }, [loadCronJobs])
+
+  // Auto-open conversation from ?conv= query param (e.g. from cron page)
+  useEffect(() => {
+    const convId = searchParams.get('conv')
+    if (convId && !activeConv) {
+      loadConversation(convId)
+    }
+  }, [searchParams, loadConversation, activeConv])
 
   // ─── Supabase Realtime ───
   useEffect(() => {
@@ -501,22 +612,33 @@ export default function ChatPage() {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
 
+        // Process complete SSE messages (terminated by \n\n)
         while (true) {
-          const eventIdx = buffer.indexOf('event: ')
-          if (eventIdx === -1) break
+          const msgEnd = buffer.indexOf('\n\n')
+          if (msgEnd === -1) break
 
-          const dataIdx = buffer.indexOf('data: ', eventIdx)
-          if (dataIdx === -1) break
+          const rawMsg = buffer.slice(0, msgEnd)
+          buffer = buffer.slice(msgEnd + 2)
 
-          const endIdx = buffer.indexOf('\n\n', dataIdx)
-          if (endIdx === -1) break
+          // Parse the SSE message: extract event type and data
+          let eventType = ''
+          let dataLines: string[] = []
 
-          const eventType = buffer.slice(eventIdx + 7, dataIdx).trim()
-          const rawData = buffer.slice(dataIdx + 6, endIdx).trim()
-          buffer = buffer.slice(endIdx + 2)
+          const rawLines = rawMsg.split('\n')
+          for (const line of rawLines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              dataLines.push(line.slice(6))
+            } else if (line.startsWith('data:')) {
+              dataLines.push(line.slice(5))
+            }
+          }
+
+          const rawData = dataLines.join('\n')
+          if (!eventType || !rawData) continue
 
           try {
             const data = JSON.parse(rawData)
@@ -549,7 +671,7 @@ export default function ChatPage() {
                       tool_name: data.tool_name,
                       tool_input: data.tool_input || {},
                       status: 'pending' as const,
-                      approvalCountdown: 20,
+                      approvalCountdown: 30,
                     }],
                     status: 'tool_wait',
                   }
@@ -581,6 +703,7 @@ export default function ChatPage() {
                 break
             }
           } catch {
+            // If JSON parse fails, treat content events as raw text
             if (eventType === 'content') {
               setStreaming(prev => ({
                 ...prev,
@@ -624,7 +747,30 @@ export default function ChatPage() {
     setSending(false)
   }
 
-  // ─── Tool approval countdown timer ───
+  // ─── Retry last failed message ───
+  const retryMessage = useCallback(() => {
+    if (!activeConv || sending) return
+    // Find the last user message and resend it
+    const messages = activeConv.messages || []
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        // Remove the failed assistant message if present
+        const lastAssistantIdx = messages.findIndex((m, idx) => idx > i && m.role === 'assistant')
+        if (lastAssistantIdx !== -1) {
+          // Remove the failed assistant message from display
+          setActiveConv(prev => prev ? {
+            ...prev,
+            messages: prev.messages?.filter((_, idx) => idx !== lastAssistantIdx) || []
+          } : prev)
+        }
+        setInput(messages[i].content)
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        return
+      }
+    }
+  }, [activeConv, sending])
+
+  // ─── Tool approval countdown timer (visual only — no auto-approve) ───
   useEffect(() => {
     if (streaming.status !== 'tool_wait') return
 
@@ -632,12 +778,7 @@ export default function ChatPage() {
       setStreaming(prev => {
         const updated = prev.toolCalls.map(tc => {
           if (tc.status === 'pending' && tc.approvalCountdown !== undefined && tc.approvalCountdown > 0) {
-            const newCountdown = tc.approvalCountdown - 1
-            if (newCountdown <= 0) {
-              approveToolCall(tc.call_id)
-              return { ...tc, status: 'approved' as const, approvalCountdown: 0 }
-            }
-            return { ...tc, approvalCountdown: newCountdown }
+            return { ...tc, approvalCountdown: tc.approvalCountdown - 1 }
           }
           return tc
         })
@@ -646,7 +787,7 @@ export default function ChatPage() {
         return {
           ...prev,
           toolCalls: updated,
-          status: stillPending ? 'tool_wait' as const : 'streaming' as const,
+          status: stillPending ? 'tool_wait' as const : prev.status,
         }
       })
     }, 1000)
@@ -678,6 +819,30 @@ export default function ChatPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const startEditTitle = () => {
+    if (!activeConv) return
+    setEditingTitle(activeConv.id)
+    setTitleValue(activeConv.title)
+  }
+
+  const saveTitle = async () => {
+    if (!activeConv || !titleValue.trim()) { setEditingTitle(null); return }
+    const newTitle = titleValue.trim()
+    setActiveConv(prev => prev ? { ...prev, title: newTitle } : prev)
+    setEditingTitle(null)
+    await fetch(`/api/chat/${activeConv.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle }) })
+    await loadConversations()
+  }
+
+  const toggleThinkingMode = async () => {
+    if (!activeConv) return
+    const newMode = !activeConv.thinking_mode
+    setActiveConv(prev => prev ? { ...prev, thinking_mode: newMode } : prev)
+    await fetch(`/api/chat/${activeConv.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ thinking_mode: newMode }) })
+    setToast(`Thinking mode ${newMode ? 'enabled' : 'disabled'}`)
+    setTimeout(() => setToast(null), 2000)
+  }
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -690,6 +855,15 @@ export default function ChatPage() {
     [conversations]
   )
 
+  const filteredConversations = useMemo(() => {
+    if (!convSearch.trim()) return sortedConversations
+    const q = convSearch.toLowerCase()
+    return sortedConversations.filter(c =>
+      c.title.toLowerCase().includes(q) ||
+      c.messages?.some(m => m.content.toLowerCase().includes(q))
+    )
+  }, [sortedConversations, convSearch])
+
   // ─── Conversation list (shared mobile/desktop) ───
   const conversationListContent = (
     <>
@@ -699,18 +873,55 @@ export default function ChatPage() {
           <Plus className="w-3.5 h-3.5" /> New
         </button>
       </div>
+      {sortedConversations.length > 0 && (
+        <div className="px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={convSearch}
+              onChange={e => setConvSearch(e.target.value)}
+              placeholder="Search conversations..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40"
+            />
+            {convSearch && (
+              <button onClick={() => setConvSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-0.5" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
-        {sortedConversations.length === 0 ? (
+        {filteredConversations.length === 0 ? (
           <div className="text-center py-12 px-4">
             <MessageSquare className="w-10 h-10 text-[var(--text-muted)] mx-auto mb-3 opacity-30" />
-            <p className="text-xs text-[var(--text-muted)]">No conversations yet</p>
-            <button onClick={createConversation} className="mt-3 text-xs text-[var(--accent)] hover:underline">Start one</button>
+            <p className="text-xs text-[var(--text-muted)]">{convSearch ? 'No matching conversations' : 'No conversations yet'}</p>
+            {!convSearch && <button onClick={createConversation} className="mt-3 text-xs text-[var(--accent)] hover:underline">Start one</button>}
           </div>
-        ) : sortedConversations.map(conv => (
+        ) : filteredConversations.map(conv => (
           <div key={conv.id} onClick={() => loadConversation(conv.id)} className={`group flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all ${activeConv?.id === conv.id ? 'bg-[var(--accent)]/10 border border-[var(--accent)]/20' : 'hover:bg-[var(--bg-card)] border border-transparent'}`}>
             <MessageSquare className={`w-4 h-4 flex-shrink-0 ${activeConv?.id === conv.id ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`} />
             <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium truncate ${activeConv?.id === conv.id ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{conv.title}</p>
+              {editingTitle === conv.id ? (
+                <input
+                  autoFocus
+                  value={titleValue}
+                  onChange={e => setTitleValue(e.target.value)}
+                  onBlur={saveTitle}
+                  onKeyDown={e => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditingTitle(null) }}
+                  onClick={e => e.stopPropagation()}
+                  className="w-full text-xs font-medium bg-[var(--bg-primary)] border border-[var(--accent)]/40 rounded px-1.5 py-0.5 text-[var(--text-primary)] focus:outline-none"
+                />
+              ) : (
+                <p
+                  className={`text-xs font-medium truncate ${activeConv?.id === conv.id ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}
+                  onDoubleClick={e => { e.stopPropagation(); setEditingTitle(conv.id); setTitleValue(conv.title) }}
+                  title="Double-click to rename"
+                >
+                  {conv.title}
+                </p>
+              )}
               <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                 {timeAgo(conv.updated_at)}
                 {conv.cron_context?.length > 0 && <span className="ml-1.5 text-[var(--purple)]">⏱ {conv.cron_context.length}</span>}
@@ -728,7 +939,7 @@ export default function ChatPage() {
   // ─── Loading state ───
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 bg-[var(--bg-primary)] flex items-center justify-center">
+      <div className="fixed inset-0 bg-[var(--bg-primary)] flex items-center justify-center" style={{ zIndex: 50 }}>
         <div className="text-center">
           <div className="relative w-16 h-16 mx-auto mb-4">
             <div className="absolute inset-0 rounded-full border-2 border-[var(--accent)]/20" />
@@ -748,7 +959,7 @@ export default function ChatPage() {
     <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)]">
       {/* ─── Mobile Sidebar (overlay) ─── */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setSidebarOpen(false)}>
+        <div className="fixed inset-0 z-[100] md:hidden" onClick={() => setSidebarOpen(false)}>
           <div className="absolute inset-0 bg-black/60" />
           <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-[var(--bg-secondary)] border-r border-[var(--border)] flex flex-col" onClick={e => e.stopPropagation()}>
             {conversationListContent}
@@ -764,9 +975,9 @@ export default function ChatPage() {
       {/* ─── Main Chat Area ───
           This is the key: flex-col with explicit height so the messages area
           can scroll independently. h-full ensures it fills the fixed parent. */}
-      <div className="flex-1 flex flex-col h-full min-h-0">
+      <div className="flex-1 flex flex-col h-full min-h-0 relative">
         {/* ── Chat Header (pinned top, never shrinks) ── */}
-        <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
+        <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl group">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)]">
             <MessageSquare className="w-4 h-4" />
           </button>
@@ -774,10 +985,16 @@ export default function ChatPage() {
           {activeConv ? (
             <>
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate">{activeConv.title}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate" title="Double-click to rename">{activeConv.title}</h3>
+                  <button onClick={startEditTitle} className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-all hidden md:block" title="Rename">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[10px] text-[var(--text-muted)]">{activeConv.messages?.length || 0} messages</span>
                   {activeConv.cron_context?.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--purple)]/10 text-[var(--purple)] border border-[var(--purple)]/20">⏱ {activeConv.cron_context.length}</span>}
+                  {activeConv.thinking_mode && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--purple)]/10 text-[var(--purple)] border border-[var(--purple)]/20 flex items-center gap-1"><Brain className="w-2.5 h-2.5" /> Thinking</span>}
                   {sending && streaming.status !== 'idle' && (
                     <span className="text-[10px] text-[var(--accent)] flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
@@ -793,6 +1010,9 @@ export default function ChatPage() {
               )}
               <button onClick={() => { setShowCronPicker(!showCronPicker); setShowSettings(false) }} className={`p-2 rounded-lg transition-colors ${showCronPicker ? 'bg-[var(--purple)]/10 text-[var(--purple)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-card)]'}`} title="Attach cron job">
                 <Clock className="w-4 h-4" />
+              </button>
+              <button onClick={toggleThinkingMode} className={`p-2 rounded-lg transition-colors ${activeConv.thinking_mode ? 'bg-[var(--purple)]/10 text-[var(--purple)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-card)]'}`} title={activeConv.thinking_mode ? 'Thinking ON — click to disable' : 'Thinking OFF — click to enable'}>
+                <Brain className="w-4 h-4" />
               </button>
               <button onClick={() => { setShowSettings(!showSettings); setShowCronPicker(false) }} className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-card)]'}`} title="Settings">
                 <Settings className="w-4 h-4" />
@@ -857,6 +1077,9 @@ export default function ChatPage() {
           <div className="mx-4 mt-3 px-4 py-2.5 rounded-xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 flex items-center gap-2 flex-shrink-0">
             <AlertTriangle className="w-4 h-4 text-[var(--danger)]" />
             <p className="text-xs text-[var(--danger)] flex-1">{error}</p>
+            <button onClick={retryMessage} className="px-2 py-1 rounded-lg bg-[var(--danger)]/10 text-[var(--danger)] text-[10px] font-medium hover:bg-[var(--danger)]/20 transition-colors flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Retry
+            </button>
             <button onClick={() => setError(null)}><X className="w-3.5 h-3.5 text-[var(--danger)]" /></button>
           </div>
         )}
@@ -870,6 +1093,7 @@ export default function ChatPage() {
             - The ref is used for programmatic scroll-to-bottom */}
         <div
           ref={scrollContainerRef}
+          onScroll={handleScroll}
           className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-4 py-4"
           style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
         >
@@ -941,6 +1165,17 @@ export default function ChatPage() {
           )}
         </div>
 
+        {/* ── Scroll-to-bottom FAB ── */}
+        {activeConv && !isNearBottom && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-24 right-6 z-20 p-2.5 rounded-full bg-[var(--bg-card)] border border-[var(--border)] shadow-lg shadow-black/20 text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 transition-all md:bottom-24 md:right-6"
+            title="Scroll to bottom"
+          >
+            <ArrowDown className="w-4 h-4" />
+          </button>
+        )}
+
         {/* ── Input Area (pinned bottom, never shrinks) ── */}
         {activeConv && (
           <div className="px-4 py-3 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-secondary)]/90 backdrop-blur-xl">
@@ -984,9 +1219,11 @@ export default function ChatPage() {
                   if (e.key === 'Enter' && !e.shiftKey && (input.trim() || attachedFiles.length > 0)) {
                     e.preventDefault()
                     sendMessage()
+                  } else if (e.key === 'Escape' && sending) {
+                    cancelStreaming()
                   }
                 }}
-                placeholder={sending ? 'Streaming...' : 'Type a message... (/help for commands)'}
+                placeholder={sending ? 'Streaming... (Esc to cancel)' : 'Type a message... ↵ Enter to send · ⇧↵ for new line · /help'}
                 rows={1}
                 disabled={sending}
                 className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 resize-none max-h-[200px] disabled:opacity-50"
@@ -1014,5 +1251,24 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="fixed inset-0 z-50 bg-[var(--bg-primary)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-2 border-[var(--accent)]/20" />
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--accent)] animate-spin" />
+            <MessageSquare className="absolute inset-0 m-auto w-5 h-5 text-[var(--accent)]" />
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">Loading chat...</p>
+        </div>
+      </div>
+    }>
+      <ChatPageInner />
+    </Suspense>
   )
 }
