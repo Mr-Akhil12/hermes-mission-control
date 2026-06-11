@@ -139,8 +139,8 @@ function renderMarkdown(text: string) {
       continue
     }
 
-    // Horizontal rules
-    if (/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(line)) {
+    // Horizontal rules (---, ***, ___)
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
       if (inUl) { result.push('</ul>'); inUl = false }
       if (inOl) { result.push('</ol>'); inOl = false }
       result.push('<hr class="my-4 border-[var(--border)]" />')
