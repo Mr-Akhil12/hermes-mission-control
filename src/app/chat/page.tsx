@@ -1,5 +1,6 @@
 'use client'
 
+// v2 — cache bust for chat page rebuild
 import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
