@@ -979,9 +979,15 @@ function ChatPageInner() {
       <div className="flex-1 flex flex-col h-full min-h-0 relative">
         {/* ── Chat Header (pinned top, never shrinks) ── */}
         <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl group">
-          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)]">
-            <MessageSquare className="w-4 h-4" />
-          </button>
+          {/* Nav: back to dashboard + mobile sidebar toggle */}
+          <div className="flex items-center gap-1.5">
+            <a href="/" className="p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Back to Dashboard">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </a>
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)]">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+          </div>
 
           {activeConv ? (
             <>
