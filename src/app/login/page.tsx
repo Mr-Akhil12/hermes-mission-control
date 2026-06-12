@@ -15,6 +15,7 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!password.trim()) return
     setLoading(true)
     setError(false)
 
@@ -70,7 +71,7 @@ function LoginForm() {
 
         <button
           type="submit"
-          disabled={loading || !password}
+          disabled={loading}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--purple)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {loading ? (
