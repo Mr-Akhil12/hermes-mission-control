@@ -260,8 +260,8 @@ export default function CronPage() {
                   </div>
                 </Link>
 
-                {/* Chat button — overlaid on the card */}
-                <div className="absolute top-3 right-3 sm:top-4 sm:right-4 opacity-0 group-hover:opacity-100 transition-all z-10">
+                {/* Chat button — positioned at bottom-right of card, below content */}
+                <div className="mt-3 pt-3 border-t border-[var(--border)] flex justify-end opacity-0 group-hover:opacity-100 transition-all">
                   <button
                     onClick={(e) => openChatWithCron(job, e)}
                     disabled={openingChat === job.id}
@@ -273,7 +273,7 @@ export default function CronPage() {
                     ) : (
                       <MessageSquare className="w-3 h-3" />
                     )}
-                    <span className="hidden sm:inline">Chat</span>
+                    <span>Chat</span>
                   </button>
                 </div>
               </div>
