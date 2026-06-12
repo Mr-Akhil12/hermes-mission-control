@@ -957,7 +957,7 @@ function ChatPageInner() {
   // MAIN RENDER — Full-bleed fixed layout
   // ═══════════════════════════════════════════
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)]" style={{ height: '100dvh' }}>
       {/* ─── Mobile Sidebar (overlay) ─── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-[100] md:hidden" onClick={() => setSidebarOpen(false)}>
