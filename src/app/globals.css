@@ -55,8 +55,6 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  /* Prevent body scroll when chat is full-bleed */
-  overflow: hidden;
 }
 
 /* Glow effects */
