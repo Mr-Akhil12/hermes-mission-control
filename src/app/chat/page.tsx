@@ -969,14 +969,14 @@ function ChatPageInner() {
       )}
 
       {/* ─── Desktop Sidebar ─── */}
-      <div className="hidden md:flex w-[280px] lg:w-[300px] h-full bg-[var(--bg-secondary)] border-r border-[var(--border)] flex-col flex-shrink-0">
+      <div className="hidden md:flex w-[280px] lg:w-[300px] shrink-0 bg-[var(--bg-secondary)] border-r border-[var(--border)] flex-col">
         {conversationListContent}
       </div>
 
       {/* ─── Main Chat Area ───
           This is the key: flex-col with explicit height so the messages area
-          can scroll independently. h-full ensures it fills the fixed parent. */}
-      <div className="flex-1 flex flex-col h-full min-h-0 relative">
+          can scroll independently. flex-1 + min-h-0 ensures it fills remaining space. */}
+      <div className="flex-1 flex flex-col min-h-0 relative">
         {/* ── Chat Header (pinned top, never shrinks) ── */}
         <div className="px-3 py-2.5 flex items-center gap-3 flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/90 backdrop-blur-xl group">
           {/* Nav: back to dashboard + mobile sidebar toggle */}
