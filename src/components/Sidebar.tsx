@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Activity, Kanban, Clock, Cpu,
   FileText, Settings, KeyRound, BookOpen, Zap,
   Menu, X, ChevronRight, MessageSquare, TrendingUp,
-  DollarSign, Sparkles
+  DollarSign, Sparkles, Gamepad2, Shield
 } from 'lucide-react'
 import { useState } from 'react'
 import Image from 'next/image'
@@ -21,6 +21,8 @@ const dashboardTabs = [
   { id: 'social', label: 'Social', icon: TrendingUp, path: '/social' },
   { id: 'trading', label: 'Trading', icon: DollarSign, path: '/trading' },
   { id: 'fun-projects', label: 'Fun Projects', icon: Sparkles, path: '/fun-projects' },
+  { id: 'dirt-hands-crew', label: 'Dirt Hands Crew', icon: Gamepad2, path: '/dirt-hands-crew' },
+  { id: 'hush', label: 'Hush', icon: Shield, path: '/hush' },
 ]
 
 const systemTabs = [
