@@ -87,8 +87,37 @@ export async function GET(
         .single()
 
       if (!error && data) {
-        // Get local outputs if available
-        const { outputs, total } = getLocalOutputs(id)
+        // Get local outputs if available (works on local dev)
+        let { outputs, total } = getLocalOutputs(id)
+
+        // On Vercel (no local FS), fetch from agent_activities
+        if (total === 0) {
+          try {
+            const { data: activities } = await supabase
+              .from('agent_activities')
+              .select('*')
+              .eq('agent_name', 'cron')
+              .eq('action', 'job_executed')
+              .order('created_at', { ascending: false })
+              .limit(50)
+
+            if (activities && activities.length > 0) {
+              const jobActivities = activities.filter(a =>
+                a.metadata?.job_name === data.name ||
+                a.details?.includes(`Job ID: ${id}`) ||
+                a.details?.includes(`**Job ID:** ${id}`)
+              )
+
+              outputs = jobActivities.slice(0, 20).map(a => ({
+                filename: `${a.created_at.split('T')[0]}_${a.id.slice(0, 8)}.md`,
+                timestamp: a.created_at,
+                size: a.details?.length || 0,
+                preview: (a.details || '').slice(0, 500),
+              }))
+              total = jobActivities.length
+            }
+          } catch { /* ignore */ }
+        }
 
         return NextResponse.json({
           job: {
