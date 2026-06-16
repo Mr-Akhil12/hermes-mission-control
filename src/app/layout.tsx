@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
 import ParticleBackground from '@/components/ParticleBackground'
+import CsrfProvider from '@/components/CsrfProvider'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
@@ -43,15 +44,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${inter.variable} font-sans bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased`}>
+        <CsrfProvider>
         <ParticleBackground />
         <div className="relative" style={{ zIndex: 1 }}>
           <Sidebar />
-          <main className="min-h-screen h-screen overflow-y-auto overflow-x-hidden pt-14 md:pt-0 md:ml-[220px]">
+          <main className="min-h-screen h-screen overflow-y-auto overflow-x-hidden pt-16 md:pt-0 md:ml-[220px]">
             <div className="p-4 md:p-6 lg:p-8 max-w-[1400px]">
               {children}
             </div>
           </main>
         </div>
+        </CsrfProvider>
       </body>
     </html>
   )

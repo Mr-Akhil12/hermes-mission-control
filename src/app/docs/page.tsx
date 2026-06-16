@@ -52,8 +52,8 @@ export default function DocsPage() {
   return (
     <div className="space-y-6">
       <div className="animate-slide-up">
-        <h1 className="text-2xl font-bold gradient-text">Documentation</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Hermes OS system documentation and references</p>
+        <h1 className="text-xl sm:text-2xl font-bold gradient-text">Documentation</h1>
+        <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1">Hermes OS system documentation and references</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
@@ -69,7 +69,7 @@ export default function DocsPage() {
               </div>
               <div className="p-3 space-y-1">
                 {section.links.map(link => (
-                  <div key={link.label} className="flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer group">
+                  <div key={link.label} className="flex items-start gap-3 px-3 py-3 rounded-xl hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer group min-h-[44px]">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">{link.label}</p>
                       <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{link.desc}</p>

@@ -1,7 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { Activity, Loader2, RefreshCw, Search, Clock, AlertTriangle, CheckCircle2, X, ChevronDown, Timer, Calendar, Settings, FileText } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Activity, RefreshCw, Search, Clock, AlertTriangle, CheckCircle2, X, ChevronDown, Timer, Calendar, Settings, FileText } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
+import { StatusDot } from '@/components/ui/StatusDot'
+import { Pagination } from '@/components/ui/Pagination'
+import { useSupabaseQuery } from '@/lib/useSupabaseQuery'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +45,8 @@ interface CronJob {
   updated_at?: string
 }
 
+const ITEMS_PER_PAGE = 20
+
 function timeAgo(dateStr: string) {
   if (!dateStr) return '—'
   const s = (Date.now() - new Date(dateStr).getTime()) / 1000
@@ -65,14 +73,12 @@ function getScheduleHuman(expr: string): string {
   if (expr === '0 */2 * * *') return 'Every 2 hours'
   if (expr === '0 * * * *') return 'Hourly'
 
-  // Every N hours: 0 */N * * *
   const everyNHours = expr.match(/^0 \*\/(\d+) \* \* \*$/)
   if (everyNHours) {
     const n = parseInt(everyNHours[1])
     return `Every ${n} hours`
   }
 
-  // Daily at specific hour: 0 H * * *
   const dailyMatch = expr.match(/^0 (\d+) \* \* \*$/)
   if (dailyMatch) {
     const utcHour = parseInt(dailyMatch[1])
@@ -80,7 +86,6 @@ function getScheduleHuman(expr: string): string {
     return `Daily at ${saHour}:00 SAST`
   }
 
-  // Every N days at specific hour: 0 H */N * *
   const everyNDays = expr.match(/^0 (\d+) \*\/(\d+) \* \*$/)
   if (everyNDays) {
     const utcHour = parseInt(everyNDays[1])
@@ -89,16 +94,13 @@ function getScheduleHuman(expr: string): string {
     return `Every ${n} days at ${saHour}:00 SAST`
   }
 
-  // Weekly: 0 H * * DOW
   if (/^0 \d+ \* \* \d+$/.test(expr)) return 'Weekly'
-
-  // Monthly: 0 H D * *
   if (/^0 \d+ \d+ \* \*$/.test(expr)) return 'Monthly'
 
   return expr
 }
 
-const statusDot: Record<string, string> = {
+const statusDotClass: Record<string, string> = {
   completed: 'bg-[var(--success)]',
   error: 'bg-[var(--danger)]',
   running: 'bg-[var(--warning)]',
@@ -117,44 +119,37 @@ const TIME_FILTERS = [
   { key: 'all', label: 'All time', hours: 0 },
 ]
 
+const ACTIVITIES_KEY = '/api/data?table=agent_activities&limit=1000&order=created_at.desc'
+const CRON_JOBS_KEY = '/api/data?table=cron_jobs&limit=100&order=created_at.desc'
+
 export default function ActivityPage() {
-  const [activities, setActivities] = useState<ActivityItem[]>([])
-  const [cronJobs, setCronJobs] = useState<CronJob[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const {
+    data: activitiesData,
+    error: actError,
+    isLoading: actLoading,
+    mutate: mutateActivities,
+  } = useSupabaseQuery<ActivityItem[]>(ACTIVITIES_KEY)
+
+  const {
+    data: cronData,
+    error: cronError,
+    isLoading: cronLoading,
+  } = useSupabaseQuery<CronJob[]>(CRON_JOBS_KEY)
+
+  const activities = activitiesData || []
+  const cronJobs = cronData || []
+
+  const loading = actLoading || cronLoading
+  const error = actError?.message || cronError?.message || null
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [timeFilter, setTimeFilter] = useState<string>('7d')
-  const [limit, setLimit] = useState<number>(50)
+  const [currentPage, setCurrentPage] = useState(1)
   const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
   const [cronOnly, setCronOnly] = useState(false)
 
-  const loadData = useCallback(async () => {
-    try {
-      setError(null)
-      setRefreshing(true)
-      const [activitiesRes, cronRes] = await Promise.all([
-        fetch('/api/data?table=agent_activities&limit=500&order=created_at.desc'),
-        fetch('/api/data?table=cron_jobs&limit=100&order=created_at.desc'),
-      ])
-      if (!activitiesRes.ok) throw new Error(`Activities HTTP ${activitiesRes.status}`)
-      if (!cronRes.ok) throw new Error(`Cron jobs HTTP ${cronRes.status}`)
-      const [activitiesData, cronData] = await Promise.all([
-        activitiesRes.json(),
-        cronRes.json(),
-      ])
-      setActivities(activitiesData || [])
-      setCronJobs(cronData || [])
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { loadData() }, [loadData])
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1) }, [search, statusFilter, timeFilter, cronOnly])
 
   // Build a map of cron job ID -> job details for quick lookup
   const cronJobMap = new Map<string, CronJob>()
@@ -162,11 +157,8 @@ export default function ActivityPage() {
 
   // Apply all filters
   const filtered = activities.filter(a => {
-    // Cron-only filter: only actual cron job executions, not cron-triggered sessions
     if (cronOnly && !(a.agent_name === 'cron' && a.action === 'job_executed')) return false
-    // Status filter
     if (statusFilter !== 'all' && a.status !== statusFilter) return false
-    // Time filter
     if (timeFilter !== 'all') {
       const tf = TIME_FILTERS.find(t => t.key === timeFilter)
       if (tf && tf.hours > 0) {
@@ -174,7 +166,6 @@ export default function ActivityPage() {
         if (new Date(a.created_at).getTime() < cutoff) return false
       }
     }
-    // Search filter
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -184,7 +175,15 @@ export default function ActivityPage() {
       )
     }
     return true
-  }).slice(0, limit)
+  })
+
+  // Pagination calculations
+  const totalFiltered = filtered.length
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / ITEMS_PER_PAGE))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalFiltered)
+  const pageItems = filtered.slice(startIndex, endIndex)
 
   const counts = {
     all: activities.length,
@@ -194,10 +193,8 @@ export default function ActivityPage() {
     cron: activities.filter(a => a.agent_name === 'cron').length,
   }
 
-  // Helper: get display name for an activity (cron name or agent_name)
   const getActivityDisplayName = (a: ActivityItem): string => {
     if (a.agent_name === 'cron' && a.action === 'job_executed') {
-      // Try metadata.job_name first, then lookup in cronJobMap
       const jobName = a.metadata?.job_name
       if (jobName) return jobName
       const jobId = a.metadata?.job_id
@@ -207,7 +204,6 @@ export default function ActivityPage() {
     return a.agent_name
   }
 
-  // Helper: get the full cron job details for a cron activity
   const getCronJobForActivity = (a: ActivityItem): CronJob | null => {
     if (a.agent_name !== 'cron' || a.action !== 'job_executed') return null
     const jobId = a.metadata?.job_id
@@ -222,30 +218,18 @@ export default function ActivityPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold gradient-text">Activity Log</h1>
           <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1">
-            {filtered.length} of {activities.length} events
+            {totalFiltered > 0
+              ? `Showing ${startIndex + 1}–${endIndex} of ${totalFiltered} events`
+              : `${activities.length} total events`}
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 self-start sm:self-auto">
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] text-[var(--text-muted)] whitespace-nowrap">Show:</label>
-            <select
-              value={limit}
-              onChange={e => setLimit(Number(e.target.value))}
-              className="px-2 py-2 rounded-lg glass-panel border border-[var(--border)] text-xs text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]/40 bg-transparent"
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
-            </select>
-          </div>
           <button
-            onClick={loadData}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl glass-panel border border-[var(--border)] text-xs sm:text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all disabled:opacity-50"
+            onClick={() => mutateActivities()}
+            className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl glass-panel border border-[var(--border)] text-xs sm:text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-all"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            <RefreshCw className={`w-3.5 h-3.5 ${actLoading ? 'animate-spin' : ''}`} />
+            {actLoading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -264,8 +248,8 @@ export default function ActivityPage() {
               className="w-full pl-10 pr-4 py-2.5 rounded-xl glass-panel border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]/40 transition-colors"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
-                <X className="w-3.5 h-3.5" />
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -279,7 +263,7 @@ export default function ActivityPage() {
               <button
                 key={tf.key}
                 onClick={() => setTimeFilter(tf.key)}
-                className={`px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
+                className={`px-2.5 py-2 min-h-[44px] rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
                   timeFilter === tf.key
                     ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -295,7 +279,7 @@ export default function ActivityPage() {
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
-                className={`px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all capitalize ${
+                className={`px-2.5 py-2 min-h-[44px] rounded-lg text-[10px] sm:text-xs font-medium transition-all capitalize ${
                   statusFilter === f
                     ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -308,7 +292,7 @@ export default function ActivityPage() {
           {/* Cron-only toggle */}
           <button
             onClick={() => setCronOnly(!cronOnly)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl border text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
               cronOnly
                 ? 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/30'
                 : 'glass-panel border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-hover)]'
@@ -321,25 +305,20 @@ export default function ActivityPage() {
       </div>
 
       {/* Content */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 text-[var(--accent)] animate-spin" />
-        </div>
+      {loading && activities.length === 0 ? (
+        <LoadingSpinner text="Loading activities..." size="md" />
       ) : error ? (
-        <div className="rounded-2xl bg-[var(--danger)]/5 border border-[var(--danger)]/20 p-6 text-center">
-          <AlertTriangle className="w-8 h-8 text-[var(--danger)] mx-auto mb-2" />
-          <p className="text-sm text-[var(--danger)]">{error}</p>
-        </div>
+        <ErrorBanner message={error} />
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl glass-panel border border-[var(--border)] p-12 text-center">
-          <Activity className="w-10 h-10 text-[var(--text-muted)] mx-auto mb-3 opacity-30" />
-          <p className="text-sm text-[var(--text-secondary)]">No activities found</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Try adjusting your filters or search query</p>
-        </div>
+        <EmptyState
+          icon={Activity}
+          title="No activities found"
+          description="Try adjusting your filters or search query"
+        />
       ) : (
         <div className="animate-slide-up rounded-2xl glass-panel border border-[var(--border)] overflow-hidden" style={{ animationDelay: '120ms' }}>
-          <div className="max-h-[600px] overflow-y-auto divide-y divide-[var(--border)]">
-            {filtered.map((a) => {
+          <div className="divide-y divide-[var(--border)]">
+            {pageItems.map((a) => {
               const st = statusLabel[a.status] || { text: a.status, color: 'text-[var(--text-muted)]' }
               const displayName = getActivityDisplayName(a)
               const isCron = a.agent_name === 'cron' && a.action === 'job_executed'
@@ -349,7 +328,9 @@ export default function ActivityPage() {
                   onClick={() => setSelectedActivity(a)}
                   className="w-full text-left flex items-start gap-3 px-4 sm:px-5 py-3.5 hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer"
                 >
-                  <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${statusDot[a.status] || 'bg-[var(--text-muted)]'}`} />
+                  <div className="mt-1 flex-shrink-0">
+                    <StatusDot status={a.status} pulse={a.status === 'running'} />
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs font-semibold ${isCron ? 'text-[var(--warning)]' : 'text-[var(--accent)]'}`}>{displayName}</span>
@@ -371,6 +352,20 @@ export default function ActivityPage() {
         </div>
       )}
 
+      {/* Pagination */}
+      {!loading && !error && filtered.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-[var(--text-muted)] hidden sm:block">
+            Page {safeCurrentPage} of {totalPages}
+          </p>
+          <Pagination
+            currentPage={safeCurrentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+      )}
+
       {/* Activity Detail Modal */}
       {selectedActivity && (() => {
         const isCron = selectedActivity.agent_name === 'cron' && selectedActivity.action === 'job_executed'
@@ -389,14 +384,14 @@ export default function ActivityPage() {
               {/* Close button */}
               <button
                 onClick={() => setSelectedActivity(null)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-all"
+                className="absolute top-4 right-4 w-10 h-10 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
 
               {/* Status badge */}
               <div className="flex items-center gap-2 mb-4">
-                <div className={`w-3 h-3 rounded-full ${statusDot[selectedActivity.status] || 'bg-[var(--text-muted)]'}`} />
+                <StatusDot status={selectedActivity.status} />
                 <span className={`text-xs font-semibold uppercase tracking-wider ${statusLabel[selectedActivity.status]?.color || 'text-[var(--text-muted)]'}`}>
                   {statusLabel[selectedActivity.status]?.text || selectedActivity.status}
                 </span>

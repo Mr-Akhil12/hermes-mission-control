@@ -326,7 +326,7 @@ export default function TasksPage() {
                       setShowNewTask(true)
                       // Pre-select column for new task
                     }}
-                    className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-all"
+                    className="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-all"
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
@@ -383,10 +383,7 @@ export default function TasksPage() {
                                       </span>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); deleteTask(task.id) }}
-                                        className="ml-auto text-[var(--text-muted)] hover:text-[var(--danger)] transition-opacity opacity-0 group-hover:opacity-100"
-                                        style={{ opacity: 0.3 }}
-                                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.3')}
+                                        className="ml-auto text-[var(--text-muted)] hover:text-[var(--danger)] transition-opacity md:opacity-0 md:group-hover:opacity-100 min-w-[44px] min-h-[44px] flex items-center justify-center -m-2 p-2"
                                       >
                                         <Trash2 className="w-3 h-3" />
                                       </button>

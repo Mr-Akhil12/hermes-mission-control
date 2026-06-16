@@ -167,3 +167,165 @@ export async function GET(
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// PATCH — toggle enabled/disabled
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params
+
+  let body: { enabled?: boolean }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body.enabled !== 'boolean') {
+    return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
+  }
+
+  // Try Supabase first
+  const supabase = getSupabase()
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('cron_jobs')
+        .update({ enabled: body.enabled, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('*')
+        .single()
+
+      if (!error && data) {
+        return NextResponse.json({
+          id: data.id,
+          name: data.name,
+          enabled: data.enabled,
+          success: true,
+        })
+      }
+    } catch {
+      // Fall through to local
+    }
+  }
+
+  // Fallback: update local jobs.json
+  try {
+    const raw = readFileSync(JOBS_FILE, 'utf-8')
+    const parsed = JSON.parse(raw)
+    const jobs = parsed.jobs || parsed
+    const jobIndex = jobs.findIndex((j: Record<string, unknown>) => j.id === id)
+
+    if (jobIndex === -1) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    jobs[jobIndex].enabled = body.enabled
+    jobs[jobIndex].state = body.enabled ? 'scheduled' : 'paused'
+    parsed.jobs = jobs
+
+    const { writeFileSync } = await import('fs')
+    writeFileSync(JOBS_FILE, JSON.stringify(parsed, null, 2))
+
+    return NextResponse.json({
+      id: jobs[jobIndex].id,
+      name: jobs[jobIndex].name,
+      enabled: jobs[jobIndex].enabled,
+      success: true,
+    })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to update cron job'
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+// POST — trigger a manual run immediately
+export async function POST(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params
+  const supabase = getSupabase()
+  const now = new Date().toISOString()
+
+  let jobRecord: Record<string, unknown> | null = null
+
+  // Fetch the job to validate it exists and get its info
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('cron_jobs')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (!error && data) {
+        jobRecord = data
+      }
+    } catch {
+      // Fall through to local
+    }
+  }
+
+  // Fallback: local
+  if (!jobRecord) {
+    try {
+      const raw = readFileSync(JOBS_FILE, 'utf-8')
+      const parsed = JSON.parse(raw)
+      jobRecord = (parsed.jobs || parsed).find((j: Record<string, unknown>) => j.id === id) || null
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!jobRecord) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  }
+
+  // Log the manual run in cron_runs if Supabase is available
+  if (supabase) {
+    try {
+      await supabase.from('cron_runs').insert({
+        cron_job_id: id,
+        status: 'running',
+        started_at: now,
+        triggered_by: 'manual',
+      })
+    } catch {
+      // cron_runs table may not exist; non-fatal
+    }
+  }
+
+  // Update last_run_at on the job
+  if (supabase) {
+    try {
+      await supabase
+        .from('cron_jobs')
+        .update({ last_run_at: now })
+        .eq('id', id)
+    } catch {
+      // non-fatal
+    }
+  }
+
+  // Trigger the Hermes cron runner for this job
+  // Use the Hermes CLI to run the job
+  const { execSync } = await import('child_process')
+  const profile = (jobRecord as Record<string, string>).profile || 'default'
+  try {
+    // Fire-and-forget the hermes cron run command
+    execSync(`hermes cron run ${id} --profile ${profile} 2>/dev/null &`, {
+      timeout: 5000,
+      shell: '/bin/bash',
+    })
+  } catch {
+    // Command may timeout (expected since it's async) or fail — non-fatal
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: `Job "${jobRecord.name || id}" triggered successfully`,
+    triggered_at: now,
+  })
+}

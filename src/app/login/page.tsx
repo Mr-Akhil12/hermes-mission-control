@@ -1,41 +1,58 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Lock, AlertTriangle, ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 
 function LoginForm() {
   const [password, setPassword] = useState('')
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [csrfToken, setCsrfToken] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/'
+
+  // Fetch CSRF token on mount
+  useEffect(() => {
+    fetch('/api/csrf')
+      .then(res => res.json())
+      .then(data => setCsrfToken(data.token))
+      .catch(() => {
+        // CSRF token fetch failed — login form still works since auth route sets the cookie
+      })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!password.trim()) return
     setLoading(true)
-    setError(false)
+    setError(null)
 
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
         body: JSON.stringify({ password }),
       })
 
       if (res.ok) {
-        const data = await res.json()
-        document.cookie = `mc_auth=${data.token}; path=/; max-age=86400; SameSite=Strict`
+        // Server sets cookies — just redirect
         router.push(redirect)
         router.refresh()
+      } else if (res.status === 429) {
+        setError('Too many attempts. Please wait and try again.')
+      } else if (res.status === 401) {
+        setError('Incorrect password. Try again.')
       } else {
-        setError(true)
+        setError('Login failed. Please try again.')
       }
     } catch {
-      setError(true)
+      setError('Network error. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -53,7 +70,7 @@ function LoginForm() {
           <input
             type="password"
             value={password}
-            onChange={e => { setPassword(e.target.value); setError(false) }}
+            onChange={e => { setPassword(e.target.value); setError(null) }}
             placeholder="Password"
             autoFocus
             className={`w-full px-4 py-3 rounded-xl bg-[var(--bg-secondary)] border text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none transition-colors ${
@@ -65,7 +82,7 @@ function LoginForm() {
         {error && (
           <div className="flex items-center gap-2 text-[var(--danger)]">
             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="text-xs">Incorrect password. Try again.</span>
+            <span className="text-xs">{error}</span>
           </div>
         )}
 
