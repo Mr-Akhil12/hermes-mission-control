@@ -147,17 +147,42 @@ export default function ActivityPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null)
   const [cronOnly, setCronOnly] = useState(false)
+  const [cronJobFilter, setCronJobFilter] = useState<string>('all')
 
   // Reset to page 1 when filters change
-  useEffect(() => { setCurrentPage(1) }, [search, statusFilter, timeFilter, cronOnly])
+  useEffect(() => { setCurrentPage(1) }, [search, statusFilter, timeFilter, cronOnly, cronJobFilter])
 
   // Build a map of cron job ID -> job details for quick lookup
   const cronJobMap = new Map<string, CronJob>()
   cronJobs.forEach(job => cronJobMap.set(job.id, job))
 
+  // Extract unique cron job names from cron activities
+  const cronJobNames = Array.from(
+    new Set(
+      activities
+        .filter(a => a.agent_name === 'cron' && a.action === 'job_executed')
+        .map(a => {
+          if (a.metadata?.job_name) return a.metadata.job_name
+          const jobId = a.metadata?.job_id
+          if (jobId && cronJobMap.has(jobId)) return cronJobMap.get(jobId)!.name || jobId
+          return 'Cron Job'
+        })
+    )
+  ).sort()
+
   // Apply all filters
   const filtered = activities.filter(a => {
     if (cronOnly && !(a.agent_name === 'cron' && a.action === 'job_executed')) return false
+    if (cronJobFilter !== 'all') {
+      // Only keep activities matching this specific cron job name
+      const isMatch = a.agent_name === 'cron' && a.action === 'job_executed' && (() => {
+        if (a.metadata?.job_name === cronJobFilter) return true
+        const jobId = a.metadata?.job_id
+        if (jobId && cronJobMap.has(jobId)) return cronJobMap.get(jobId)!.name === cronJobFilter
+        return cronJobFilter === 'Cron Job'
+      })()
+      if (!isMatch) return false
+    }
     if (statusFilter !== 'all' && a.status !== statusFilter) return false
     if (timeFilter !== 'all') {
       const tf = TIME_FILTERS.find(t => t.key === timeFilter)
@@ -302,6 +327,63 @@ export default function ActivityPage() {
             Cron only ({counts.cron})
           </button>
         </div>
+
+        {/* Cron Job Name filter - only show when there are multiple cron jobs */}
+        {cronJobNames.length > 1 && (
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            {/* Mobile: dropdown */}
+            <div className="sm:hidden relative">
+              <select
+                value={cronJobFilter}
+                onChange={e => setCronJobFilter(e.target.value)}
+                className="w-full appearance-none pl-3 pr-8 py-2.5 min-h-[44px] rounded-xl glass-panel border border-[var(--border)] text-xs font-medium text-[var(--text-secondary)] bg-transparent focus:outline-none focus:border-[var(--accent)]/40 transition-colors"
+              >
+                <option value="all">All cron jobs ({cronJobNames.length})</option>
+                {cronJobNames.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)] pointer-events-none" />
+            </div>
+
+            {/* Desktop: button pills */}
+            <div className="hidden sm:flex items-center gap-1 glass-panel border border-[var(--border)] rounded-xl p-1 overflow-x-auto">
+              <span className="px-2 py-1 text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-medium whitespace-nowrap">Job:</span>
+              <button
+                onClick={() => setCronJobFilter('all')}
+                className={`px-2.5 py-1.5 min-h-[44px] rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
+                  cronJobFilter === 'all'
+                    ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                All
+              </button>
+              {cronJobNames.map(name => (
+                <button
+                  key={name}
+                  onClick={() => setCronJobFilter(name)}
+                  className={`px-2.5 py-1.5 min-h-[44px] rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
+                    cronJobFilter === name
+                      ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+              {cronJobFilter !== 'all' && (
+                <button
+                  onClick={() => setCronJobFilter('all')}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] sm:text-xs font-medium text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-all whitespace-nowrap"
+                >
+                  <X className="w-3 h-3" />
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}

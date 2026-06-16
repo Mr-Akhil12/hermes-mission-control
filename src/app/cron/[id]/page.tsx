@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, RefreshCw, Clock, AlertTriangle, Settings, Timer,
   FileText, ChevronDown, ChevronRight,
-  ArrowLeft, Copy, Check, MessageSquare, Terminal
+  ArrowLeft, Copy, Check, MessageSquare, Terminal, History,
+  CheckCircle2, XCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -38,6 +39,15 @@ interface OutputFile {
   timestamp: string
   size: number
   preview: string
+}
+
+interface RunEntry {
+  id: string
+  timestamp: string
+  status: string
+  action: string
+  details: string | null
+  metadata: Record<string, unknown>
 }
 
 interface CronDetailData {
@@ -117,11 +127,13 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
-  const [tab, setTab] = useState<'overview' | 'outputs' | 'prompt'>('overview')
+  const [tab, setTab] = useState<'overview' | 'outputs' | 'runs' | 'prompt'>('overview')
   const [expandedOutput, setExpandedOutput] = useState<string | null>(null)
   const [fullContent, setFullContent] = useState<Record<string, string>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [openingChat, setOpeningChat] = useState(false)
+  const [runs, setRuns] = useState<RunEntry[]>([])
+  const [loadingRuns, setLoadingRuns] = useState(false)
   const router = useRouter()
 
   useEffect(() => { params.then((p: { id: string }) => setJobId(p.id)) }, [params])
@@ -142,6 +154,23 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
   }, [jobId])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const loadRuns = useCallback(async () => {
+    if (!jobId) return
+    setLoadingRuns(true)
+    try {
+      const res = await fetch(`/api/cron/${jobId}/activity?type=history`)
+      if (res.ok) {
+        const data = await res.json()
+        setRuns(data.history || [])
+      }
+    } catch { /* ignore */ }
+    finally { setLoadingRuns(false) }
+  }, [jobId])
+
+  useEffect(() => {
+    if (tab === 'runs' && jobId) loadRuns()
+  }, [tab, jobId, loadRuns])
 
   const openChatWithCron = async () => {
     if (!data?.job) return
@@ -291,6 +320,7 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
           {([
             { id: 'overview' as const, label: 'Overview', icon: Settings },
             { id: 'outputs' as const, label: `Outputs (${total_outputs})`, icon: FileText },
+            { id: 'runs' as const, label: 'Runs', icon: History },
             { id: 'prompt' as const, label: 'Prompt', icon: Terminal },
           ]).map(t => {
             const Icon = t.icon
@@ -475,6 +505,77 @@ export default function CronDetailPage({ params }: { params: Promise<{ id: strin
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === 'runs' && (
+          <div className="space-y-2">
+            {loadingRuns ? (
+              <div className="rounded-2xl glass-panel border border-[var(--border)] p-12 text-center">
+                <Loader2 className="w-6 h-6 text-[var(--accent)] mx-auto mb-3 animate-spin" />
+                <p className="text-xs text-[var(--text-muted)]">Loading run history...</p>
+              </div>
+            ) : runs.length === 0 ? (
+              <div className="rounded-2xl glass-panel border border-[var(--border)] p-12 text-center">
+                <History className="w-10 h-10 text-[var(--text-muted)] mx-auto mb-3 opacity-30" />
+                <p className="text-sm text-[var(--text-secondary)]">No runs recorded yet</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Runs will appear here after the job executes</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] text-[var(--text-muted)]">{runs.length} run{runs.length !== 1 ? 's' : ''} recorded</p>
+                  <button
+                    onClick={loadRuns}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-all"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" /> Refresh
+                  </button>
+                </div>
+                {runs.map((run) => (
+                  <div
+                    key={run.id}
+                    className={`rounded-xl glass-panel border overflow-hidden ${
+                      run.status === 'error' ? 'border-[var(--danger)]/20' : 'border-[var(--border)]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      {run.status === 'error' ? (
+                        <XCircle className="w-4 h-4 text-[var(--danger)] flex-shrink-0" />
+                      ) : run.status === 'running' ? (
+                        <Loader2 className="w-4 h-4 text-[var(--accent)] animate-spin flex-shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-[var(--success)] flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-[var(--text-primary)]">
+                            {run.action || 'Run'}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium uppercase tracking-wider ${
+                            run.status === 'error' ? 'bg-[var(--danger)]/10 text-[var(--danger)]' :
+                            run.status === 'running' ? 'bg-[var(--accent)]/10 text-[var(--accent)]' :
+                            'bg-[var(--success)]/10 text-[var(--success)]'
+                          }`}>
+                            {run.status}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                          {timeAgo(run.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+                    {run.details && (
+                      <div className="px-4 pb-3 border-t border-[var(--border)]/50">
+                        <pre className="text-[10px] font-mono text-[var(--text-muted)] mt-2 whitespace-pre-wrap break-words leading-relaxed max-h-[200px] overflow-y-auto">
+                          {run.details}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 

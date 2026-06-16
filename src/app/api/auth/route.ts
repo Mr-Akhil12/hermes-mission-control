@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { rateLimit } from '@/lib/rate-limit'
 
-const PASSWORD = process.env.DASHBOARD_PASSWORD || 'AdminLogsIn'
 const MAX_ATTEMPTS = 10
 const WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
+function getPassword(): string | undefined {
+  return process.env.DASHBOARD_PASSWORD
+}
 
 function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for')
@@ -16,7 +19,8 @@ function getClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   // Fail closed: if DASHBOARD_PASSWORD is not set, login is impossible
-  if (!PASSWORD) {
+  const storedPassword = getPassword()
+  if (!storedPassword) {
     return NextResponse.json(
       { error: 'Authentication not configured' },
       { status: 503 }
@@ -37,7 +41,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { password } = body
 
-    if (password !== PASSWORD) {
+    if (password !== storedPassword) {
       return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
     }
 

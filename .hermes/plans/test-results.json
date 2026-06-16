@@ -1,0 +1,86 @@
+{
+  "Overview": {
+    "url": "https://jarvis-x-akhil.vercel.app/",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nMission Control\n\nReal-time system overview\n\nLive\nTASKS\n\n1\n\n0 todo \u00b7 0 active \u00b7 1 done\n\nACTIVITIES\n\n20\n\nLast 20 events\n\nERRORS\n\n0\n\nAll healthy\n\nSTATUS\n\nLive\n\nReal-time sync active\n\nLive Activity Feed\nONLINE\ncron\njob_executed\n\n# Cron Job: task-worker **Job ID:** 98f13a9b824f **Run Time:** 2026-06-16 15:47:56 **Schedule:** every 3m ## Prompt [IMPORTANT: You are running as a scheduled cron job. DELIVERY: Your final response will be automatically delivered to the use"
+  },
+  "Chat": {
+    "url": "https://jarvis-x-akhil.vercel.app/chat",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nConversations\nNew\n\nHey bro this cron definitely has an issue check the last few runs\n\n8d ago\n\nSelect or create a conversation\n\nChat with Hermes\n\nReal-time streaming with thinking blocks, tool calls, and live approval.\n\nType /help for available commands.\n\nStart Conversation"
+  },
+  "Activity": {
+    "url": "https://jarvis-x-akhil.vercel.app/activity",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nActivity Log\n\nShowing 1\u201320 of 1000 events\n\nRefresh\n48 hours\nPast day\nPast 7 days\nAll time\nAll (1000)\nCompleted (1000)\nError (0)\nRunning (0)\nCron only (1000)\ntask-worker\nCRON\njob_executed\n\u00b7 Completed\n\n# Cron Job: task-worker **Job ID:** 98f13a9b824f **Run Time:** 2026-06-16 15:47:56 **Schedule:** every 3m ## Prompt [IMPORTANT: You are running as a scheduled cron job. DELIVERY: Your final response will be automatically delivered to the user \u2014 do NOT use send_messa"
+  },
+  "Tasks": {
+    "url": "https://jarvis-x-akhil.vercel.app/tasks",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nTasks\n\n1 tasks \u00b7 0 active \u00b7 0 drafts\n\nNew Task\nDraft\n0\n\nDrop tasks here\n\nTo Do\n0\n\nDrop tasks here\n\nIn Progress\n0\n\nDrop tasks here\n\nDone\n1\nHigh\nhermes\n\nCreate Chat Interface for hermes-x-akhil mission control\n\nThe way this will work is basically like a chat interface between you and I, make it a smart interface including things such as thinking mode adjustments, attaching of files, conversation history, etc etc. Basically what you'd expect from a chatgpt/gemini/g"
+  },
+  "Cron": {
+    "url": "https://jarvis-x-akhil.vercel.app/cron",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nCron Jobs\n\n24 active \u00b7 1 paused \u00b7 1 errors \u00b7 25 total\n\nRefresh\n\nShowing 1\u201320 of 25 jobs\n\ntask-worker\n\nevery 3m\n\nLast: 4m ago\n\norigin\n\nACTIVE\nOverdue\nRun Now\nOn\nActive\nChat\ntask-detector\n\nevery 2m\n\nLast: 6m ago\n\norigin\n\nACTIVE\nOverdue\nRun Now\nOn\nActive\nChat\nkanban-two-way-sync\n\nevery 3m\n\nLast: 10d ago\n\norigin\n\nACTIVE\nOverdue\nRun Now\nOn\nActive\nChat\ncron-supabase-sync\n\nevery 15m\n\nLast: 19m ago\n\norigin\n\nACTIVE\nin 10m\nRun Now\nOn\nActive\nChat\nthatslekker-cipc-import\n\nD"
+  },
+  "Models": {
+    "url": "https://jarvis-x-akhil.vercel.app/models",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nModels\n\nAI models available to Hermes\n\nUpdated 4:13:54 PM\nOWL (OpenRouter)\n\nopenrouter/owl-alpha\n\nPrimary Agent\n128K ctx\nactive\nGemma 3 12B\n\ngoogle/gemma-3-12b-it:free\n\nVision Analysis\n128K ctx\nactive\nClaude Sonnet 4\n\nanthropic/claude-sonnet-4\n\nCode & Review\n200K ctx\navailable\nHermes Agent\n\nlocal\n\nSystem Default\n32K ctx\nactive"
+  },
+  "Logs": {
+    "url": "https://jarvis-x-akhil.vercel.app/logs",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nLogs\n\nSystem and agent logs\n\nRefresh\nAgent Log Stream\n[4:09:54 PM] cron: job_executed \u2014 # Cron Job: task-worker **Job ID:** 98f13a9b824f **Run Time:** 2026-06-16 15:47:56 **Schedule:** every 3m ## Prompt [IMPORTANT: You are running as a scheduled cron job. DELIVERY: Your final response will be automatically delivered to the user \u2014 do NOT use send_message or try to deliver the output yourself. Just produce your report/output as your final response and the system "
+  },
+  "Config": {
+    "url": "https://jarvis-x-akhil.vercel.app/config",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nConfig\n\nSystem configuration and status\n\nUpdated 4:14:05 PM\nDashboard\n3 items\nVersion\n0.1.0\nEnvironment\nproduction\nRuntime\nNext.js 16 (React 19)\nGateway\n2 items\nHermes API\nrefract-delicious-nearest.ngrok-free.dev\nStatus\nConfigured\nDatabase\n2 items\nSupabase URL\nhttp\u2022\u2022\u2022\u2022\nSupabase Anon Key\nsb_s\u2022\u2022\u2022\u2022\nIntegrations\n1 items\nOpenRouter API Key\nNot configured"
+  },
+  "Keys": {
+    "url": "https://jarvis-x-akhil.vercel.app/keys",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nKeys\n\nAPI keys and secrets management\n\nSensitive Information\n\nKeys are masked server-side for security. Click the eye icon to show partial value. Full keys are never exposed to the browser.\n\nSupabase URL\n\nhttps://bwlrhvmgychtgfwwgmhn.supabase.co\n\nSupabase Anon Key\n\n\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\n\nOpenRouter API\n\n\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\n\nCloudflare Token\n\n\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\n\nn8n API Key\n\n\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+  },
+  "Docs": {
+    "url": "https://jarvis-x-akhil.vercel.app/docs",
+    "status": "loaded",
+    "preview": "Hermes OS\nMISSION CONTROL\n\nDASHBOARD\n\nOverview\nChat\nActivity\nTasks\nCron\nModels\n\nSYSTEM\n\nLogs\nConfig\nKeys\nDocs\nAll systems operational\nDocumentation\n\nHermes OS system documentation and references\n\nGetting Started\n\nQuick Start Guide\n\nSet up Hermes in 5 minutes\n\nArchitecture Overview\n\nHow the system is structured\n\nConfiguration\n\nConfig.yaml reference\n\nInfrastructure\n\nGateway API\n\nPort 9119 \u2014 agent communication\n\nControl Plane\n\nPort 9120 \u2014 dashboard & monitoring\n\nn8n Integration\n\nWorkflow automation on port 5678\n\nTailscale Access\n\nSecure remote access via mesh VPN\n\nData Layer\n\nSupabase Schema\n\n4 t"
+  },
+  "API_Activities": {
+    "count": 3,
+    "sample": "{'id': 'a4ccbf56-c55d-48d4-a871-78165f9cf46d', 'agent_name': 'cron', 'action': 'job_executed', 'details': '# Cron Job: task-worker\\n\\n**Job ID:** 98f13a9b824f\\n**Run Time:** 2026-06-16 15:47:56\\n**Sch",
+    "status": "ok"
+  },
+  "API_Tasks": {
+    "count": 1,
+    "sample": "{'id': '428f3230-cca9-4d44-b092-34fb04cab0e4', 'title': 'Create Chat Interface for hermes-x-akhil mission control', 'description': \"The way this will work is basically like a chat interface between yo",
+    "status": "ok"
+  },
+  "API_CronJobs": {
+    "count": 3,
+    "sample": "{'id': '98f13a9b824f', 'name': 'task-worker', 'schedule': '', 'schedule_display': 'every 3m', 'enabled': True, 'state': 'scheduled', 'last_run_at': '2026-06-16T14:08:48.70646+00:00', 'next_run_at': '2",
+    "status": "ok"
+  },
+  "API_Keys": {
+    "count": 5,
+    "sample": "{'name': 'Supabase URL', 'value': 'https://bwlrhvmgychtgfwwgmhn.supabase.co', 'sensitive': False, 'configured': True}",
+    "status": "ok"
+  },
+  "API_Models": {
+    "count": 4,
+    "sample": "{'models': [{'id': 'openrouter/owl-alpha', 'name': 'OWL (OpenRouter)', 'provider': 'openrouter/owl-alpha', 'context_length': 128000, 'status': 'active', 'role': 'Primary Agent', 'color': 'var(--accent",
+    "status": "ok"
+  },
+  "API_Config": {
+    "count": 4,
+    "sample": "{'sections': [{'title': 'Dashboard', 'items': [{'label': 'Version', 'value': '0.1.0', 'masked': False}, {'label': 'Environment', 'value': 'production', 'masked': False}, {'label': 'Runtime', 'value': ",
+    "status": "ok"
+  },
+  "Security": {
+    "api_blocked": true,
+    "note": "Page.evaluate: TypeError: Failed to fetch\n    at eval (eval at evaluate (:302:30), <anonymous>:1:7)\n"
+  }
+}
