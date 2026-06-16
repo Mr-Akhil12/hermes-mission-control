@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Activity, Kanban, Clock, Cpu,
   FileText, Settings, KeyRound, BookOpen, Zap,
-  Menu, X, ChevronRight, MessageSquare
+  Menu, X, ChevronRight, MessageSquare, TrendingUp
 } from 'lucide-react'
 import { useState } from 'react'
 import Image from 'next/image'
@@ -17,6 +17,7 @@ const dashboardTabs = [
   { id: 'tasks', label: 'Tasks', icon: Kanban, path: '/tasks' },
   { id: 'cron', label: 'Cron', icon: Clock, path: '/cron' },
   { id: 'models', label: 'Models', icon: Cpu, path: '/models' },
+  { id: 'social', label: 'Social', icon: TrendingUp, path: '/social' },
 ]
 
 const systemTabs = [
