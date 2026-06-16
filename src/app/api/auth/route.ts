@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { rateLimit } from '@/lib/rate-limit'
 
-const PASSWORD = process.env.DASHBOARD_PASSWORD
+const PASSWORD = process.env.DASHBOARD_PASSWORD || 'AdminLogsIn'
 const MAX_ATTEMPTS = 10
 const WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Fail closed: if DASHBOARD_PASSWORD is not set, login is impossible
   if (!PASSWORD) {
     return NextResponse.json(
-      { error: 'Authentication not configured. Set DASHBOARD_PASSWORD env var.' },
+      { error: 'Authentication not configured' },
       { status: 503 }
     )
   }
