@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Activity, Kanban, Clock, Cpu,
   FileText, Settings, KeyRound, BookOpen, Zap,
   Menu, X, ChevronRight, MessageSquare, TrendingUp,
-  DollarSign
+  DollarSign, Sparkles
 } from 'lucide-react'
 import { useState } from 'react'
 import Image from 'next/image'
@@ -20,6 +20,7 @@ const dashboardTabs = [
   { id: 'models', label: 'Models', icon: Cpu, path: '/models' },
   { id: 'social', label: 'Social', icon: TrendingUp, path: '/social' },
   { id: 'trading', label: 'Trading', icon: DollarSign, path: '/trading' },
+  { id: 'fun-projects', label: 'Fun Projects', icon: Sparkles, path: '/fun-projects' },
 ]
 
 const systemTabs = [
