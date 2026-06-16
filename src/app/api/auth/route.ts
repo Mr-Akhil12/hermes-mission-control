@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Fail closed: if DASHBOARD_PASSWORD is not set, login is impossible
   if (!PASSWORD) {
     return NextResponse.json(
-      { error: 'Authentication not configured' },
+      { error: 'Authentication not configured. Set DASHBOARD_PASSWORD env var.' },
       { status: 503 }
     )
   }
