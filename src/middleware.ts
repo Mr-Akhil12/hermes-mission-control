@@ -10,6 +10,9 @@ function timingSafeEqual(a: string, b: string): boolean {
   return result === 0
 }
 
+// Routes that allow x-internal-cron bypass (no auth/CSRF required)
+const CRON_BYPASS_ROUTES = ['/api/social']
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const method = request.method
@@ -22,6 +25,12 @@ export function middleware(request: NextRequest) {
     pathname === '/api/auth' ||
     pathname === '/api/csrf'
   ) {
+    return NextResponse.next()
+  }
+
+  // Internal cron bypass: allow trusted API routes when x-internal-cron header is set
+  const isCron = request.headers.get('x-internal-cron') === 'true'
+  if (isCron && CRON_BYPASS_ROUTES.some(route => pathname.startsWith(route))) {
     return NextResponse.next()
   }
 
@@ -48,10 +57,7 @@ export function middleware(request: NextRequest) {
   }
 
   // For mutating API routes (POST, PUT, PATCH, DELETE), check CSRF token
-  if (
-    pathname.startsWith('/api/') &&
-    ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-  ) {
+  if (pathname.startsWith('/api/') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const csrfHeader = request.headers.get('x-csrf-token')
     const csrfCookie = request.cookies.get('csrf_token')?.value
 
