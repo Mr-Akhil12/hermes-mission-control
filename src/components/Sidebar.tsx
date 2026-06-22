@@ -19,7 +19,10 @@ const dashboardTabs = [
   { id: 'cron', label: 'Cron', icon: Clock, path: '/cron' },
   { id: 'models', label: 'Models', icon: Cpu, path: '/models' },
   { id: 'social', label: 'Social', icon: TrendingUp, path: '/social' },
-  { id: 'trading', label: 'Trading', icon: DollarSign, path: '/trading' },
+  { id: 'trading', label: 'Trading', icon: DollarSign, path: '/trading', subTabs: [
+    { id: 'trading-overview', label: 'Overview', path: '/trading' },
+    { id: 'twp-activation', label: 'TWP Kit', path: '/trading/twp-activation' },
+  ]},
   { id: 'fun-projects', label: 'Fun Projects', icon: Sparkles, path: '/fun-projects' },
   { id: 'dirt-hands-crew', label: 'Dirt Hands Crew', icon: Gamepad2, path: '/dirt-hands-crew' },
   { id: 'hush', label: 'Hush', icon: Shield, path: '/hush' },
@@ -44,21 +47,41 @@ export default function Sidebar() {
   const renderNavItem = (tab: typeof dashboardTabs[0], onClick?: () => void) => {
     const Icon = tab.icon
     const active = isActive(tab.path)
+    const hasSubTabs = 'subTabs' in tab && tab.subTabs
     return (
-      <Link
-        key={tab.id}
-        href={tab.path}
-        onClick={onClick}
-        className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-xl text-[13px] transition-all ${
-          active
-            ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
-        }`}
-      >
-        <Icon className="w-4 h-4 flex-shrink-0" />
-        <span>{tab.label}</span>
-        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
-      </Link>
+      <div key={tab.id}>
+        <Link
+          href={tab.path}
+          onClick={onClick}
+          className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-xl text-[13px] transition-all ${
+            active
+              ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
+          }`}
+        >
+          <Icon className="w-4 h-4 flex-shrink-0" />
+          <span>{tab.label}</span>
+          {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+        </Link>
+        {hasSubTabs && active && (
+          <div className="ml-6 mt-1 space-y-0.5">
+            {tab.subTabs!.map(sub => (
+              <Link
+                key={sub.id}
+                href={sub.path}
+                onClick={onClick}
+                className={`block px-3 py-1.5 rounded-lg text-[11px] transition-all ${
+                  pathname === sub.path
+                    ? 'text-[var(--accent)] font-medium bg-[var(--accent)]/5'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                {sub.label}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     )
   }
 
