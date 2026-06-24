@@ -65,6 +65,13 @@ const PLATFORMS: Record<string, PlatformConfig> = {
     colorClass: 'text-[#FF0000]',
     gradientClass: 'from-[#FF0000]/20 to-transparent',
   },
+  tiktok: {
+    name: 'TikTok',
+    icon: Play,
+    color: '#00f2ea',
+    colorClass: 'text-[#00f2ea]',
+    gradientClass: 'from-[#00f2ea]/20 to-transparent',
+  },
   twitter: {
     name: 'X / Twitter',
     icon: AtSign,
@@ -72,12 +79,12 @@ const PLATFORMS: Record<string, PlatformConfig> = {
     colorClass: 'text-[#1DA1F2]',
     gradientClass: 'from-[#1DA1F2]/20 to-transparent',
   },
-  discord: {
-    name: 'Discord',
-    icon: MessageCircle,
-    color: '#5865F2',
-    colorClass: 'text-[#5865F2]',
-    gradientClass: 'from-[#5865F2]/20 to-transparent',
+  facebook: {
+    name: 'Facebook',
+    icon: Globe,
+    color: '#1877F2',
+    colorClass: 'text-[#1877F2]',
+    gradientClass: 'from-[#1877F2]/20 to-transparent',
   },
   github: {
     name: 'GitHub',
@@ -103,16 +110,17 @@ const MOCK_SOCIAL_KEY = '/api/social'
 
 const MOCK_METRICS: PlatformMetric[] = [
   { platform: 'youtube', followers: 1247, growth: 5.3, engagement: 72, recorded_at: new Date().toISOString() },
+  { platform: 'tiktok', followers: 2840, growth: 18.2, engagement: 78, recorded_at: new Date().toISOString() },
   { platform: 'twitter', followers: 3892, growth: 8.1, engagement: 64, recorded_at: new Date().toISOString() },
-  { platform: 'discord', followers: 568, growth: 12.4, engagement: 85, recorded_at: new Date().toISOString() },
+  { platform: 'facebook', followers: 1520, growth: 2.4, engagement: 45, recorded_at: new Date().toISOString() },
   { platform: 'github', followers: 2156, growth: 3.2, engagement: 91, recorded_at: new Date().toISOString() },
-  { platform: 'website', followers: 8420, growth: 15.7, engagement: 58, recorded_at: new Date().toISOString() },
+  { platform: 'website', followers: 48, growth: 0, engagement: 58, recorded_at: new Date().toISOString() },
 ]
 
 const MOCK_GROWTH: GrowthHistory[] = (() => {
   const history: GrowthHistory[] = []
-  const platforms = ['youtube', 'twitter', 'discord', 'github', 'website']
-  const baseValues = { youtube: 1100, twitter: 3200, discord: 420, github: 2000, website: 6800 }
+  const platforms = ['youtube', 'tiktok', 'twitter', 'facebook', 'github', 'website']
+  const baseValues = { youtube: 1100, tiktok: 2200, twitter: 3200, facebook: 1400, github: 2000, website: 40 }
   for (let i = 29; i >= 0; i--) {
     const date = new Date()
     date.setDate(date.getDate() - i)
@@ -128,11 +136,11 @@ const MOCK_GROWTH: GrowthHistory[] = (() => {
 
 const MOCK_CALENDAR: CalendarEntry[] = [
   { id: '1', platform: 'youtube', title: 'Weekly Hermes Update #42', description: 'Covering new agent features and performance improvements', scheduled_at: new Date(Date.now() + 86400000 * 1).toISOString(), status: 'scheduled' },
-  { id: '2', platform: 'twitter', title: 'Thread: AI Agent Best Practices', description: '7-part thread on building reliable AI agents', scheduled_at: new Date(Date.now() + 86400000 * 2).toISOString(), status: 'scheduled' },
-  { id: '3', platform: 'discord', title: 'Community AMA Session', description: 'Open Q&A about Hermes OS roadmap', scheduled_at: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'scheduled' },
-  { id: '4', platform: 'github', title: 'Release v0.2.0', description: 'Major release with social tracker, cron improvements', scheduled_at: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'scheduled' },
-  { id: '5', platform: 'website', title: 'Blog Post: Mission Control Deep Dive', description: 'Technical walkthrough of the dashboard architecture', scheduled_at: new Date(Date.now() + 86400000 * 7).toISOString(), status: 'scheduled' },
-  { id: '6', platform: 'twitter', title: 'Showcase: Real-time Activity Feed', description: 'Video demo of the live monitoring feature', scheduled_at: new Date(Date.now() + 86400000 * 10).toISOString(), status: 'scheduled' },
+  { id: '2', platform: 'tiktok', title: 'AI Agent Demo Clip', description: 'Short demo of the Siri AI video production pipeline', scheduled_at: new Date(Date.now() + 86400000 * 2).toISOString(), status: 'scheduled' },
+  { id: '3', platform: 'twitter', title: 'Thread: AI Agent Best Practices', description: '7-part thread on building reliable AI agents', scheduled_at: new Date(Date.now() + 86400000 * 2).toISOString(), status: 'scheduled' },
+  { id: '4', platform: 'facebook', title: 'Project Showcase: AgenticBiz', description: 'New case study on AI agent deployment', scheduled_at: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'scheduled' },
+  { id: '5', platform: 'github', title: 'Release v0.2.0', description: 'Major release with social tracker, cron improvements', scheduled_at: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'scheduled' },
+  { id: '6', platform: 'website', title: 'Blog Post: Mission Control Deep Dive', description: 'Technical walkthrough of the dashboard architecture', scheduled_at: new Date(Date.now() + 86400000 * 7).toISOString(), status: 'scheduled' },
 ]
 
 /* ────────────────────────────────────────────────────────────

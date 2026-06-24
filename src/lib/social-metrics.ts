@@ -1,15 +1,15 @@
 /**
  * Social Media Metrics — Utility functions for fetching platform stats.
  *
- * These are placeholder functions that return mock data.
- * Replace with actual API calls once credentials are configured.
- *
  * Each function returns:
  *   { followers: number, growth: number, engagement: number }
  *
  *   followers — total follower / subscriber / member count
  *   growth    — weekly growth percentage (positive or negative)
  *   engagement — engagement score (0-100) representing interaction rate
+ *
+ * Platforms with API keys: YouTube (needs key)
+ * Platforms without auth: GitHub, TikTok (scrape), X (scrape), Facebook (scrape)
  */
 
 export interface PlatformStats {
@@ -21,107 +21,207 @@ export interface PlatformStats {
 export interface SocialMetrics {
   youtube: PlatformStats
   twitter: PlatformStats
-  discord: PlatformStats
+  tiktok: PlatformStats
+  facebook: PlatformStats
   github: PlatformStats
   website: PlatformStats
 }
 
-/** Fetch YouTube subscriber count (YouTube Data API v3). */
+/* ═══════════════════════════════════════════════════════════════════
+ * YouTube (needs API key — placeholder until key is provided)
+ * ═══════════════════════════════════════════════════════════════════ */
+
 export async function fetchYouTubeStats(): Promise<PlatformStats> {
-  // TODO: Replace with YouTube Data API call
+  // TODO: Replace with YouTube Data API v3 once key is provided
   // const res = await fetch(
   //   `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${YOUTUBE_CHANNEL_ID}&key=${YOUTUBE_API_KEY}`
   // )
   // const json = await res.json()
   // const stats = json.items[0].statistics
-  // return { followers: +stats.subscriberCount, growth: ..., engagement: ... }
+  // return { followers: +stats.subscriberCount, growth: 0, engagement: 0 }
 
-  return {
-    followers: 0,
-    growth: 0,
-    engagement: 0,
-  }
+  return { followers: 0, growth: 0, engagement: 0 }
 }
 
-/** Fetch X/Twitter follower count (X API v2). */
+/* ═══════════════════════════════════════════════════════════════════
+ * X / Twitter (public profile scraping — no API key needed)
+ * ═══════════════════════════════════════════════════════════════════ */
+
 export async function fetchTwitterStats(): Promise<PlatformStats> {
-  // TODO: Replace with X API v2 call
-  // const res = await fetch(
-  //   `https://api.twitter.com/2/users/${TWITTER_USER_ID}?user.fields=public_metrics`,
-  //   { headers: { Authorization: `Bearer ${TWITTER_BEARER_TOKEN}` } }
-  // )
-  // const json = await res.json()
-  // const metrics = json.data.public_metrics
-  // return { followers: metrics.followers_count, growth: ..., engagement: ... }
+  try {
+    // Scrape public X profile page for follower count
+    const res = await fetch('https://x.com/ThatITDudee', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    })
+    const html = await res.text()
 
-  return {
-    followers: 0,
-    growth: 0,
-    engagement: 0,
+    // Extract follower count from the page
+    // X uses "followers" in the meta og:description or in the title
+    const followerMatch = html.match(/(\d+(?:,\d+)*(?:\.\d+)?[KMB]?)\s*Followers/i)
+    const followers = followerMatch ? parseCompactNumber(followerMatch[1]) : 0
+
+    return {
+      followers,
+      growth: 0, // Would need historical data to calculate
+      engagement: 0, // Would need tweet interaction data
+    }
+  } catch {
+    return { followers: 0, growth: 0, engagement: 0 }
   }
 }
 
-/** Fetch Discord server member count (Discord Bot API). */
-export async function fetchDiscordStats(): Promise<PlatformStats> {
-  // TODO: Replace with Discord API call
-  // const res = await fetch(
-  //   `https://discord.com/api/guilds/${DISCORD_GUILD_ID}?with_counts=true`,
-  //   { headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` } }
-  // )
-  // const json = await res.json()
-  // return { followers: json.approximate_member_count, growth: ..., engagement: ... }
+/* ═══════════════════════════════════════════════════════════════════
+ * TikTok (public profile scraping — no API key needed)
+ * ═══════════════════════════════════════════════════════════════════ */
 
-  return {
-    followers: 0,
-    growth: 0,
-    engagement: 0,
+export async function fetchTikTokStats(): Promise<PlatformStats> {
+  try {
+    const res = await fetch('https://www.tiktok.com/@that_it_dude', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    })
+    const html = await res.text()
+
+    // Extract follower count from TikTok profile
+    // TikTok renders client-side, so we look for SSR data in JSON
+    const followerMatch = html.match(/"followerCount"\s*:\s*(\d+)/)
+    const followingMatch = html.match(/"followingCount"\s*:\s*(\d+)/)
+    const likesMatch = html.match(/"heartCount"\s*:\s*(\d+)/)
+    const videoMatch = html.match(/"videoCount"\s*:\s*(\d+)/)
+
+    const followers = followerMatch ? parseInt(followerMatch[1], 10) : 0
+    const following = followingMatch ? parseInt(followingMatch[1], 10) : 0
+    const likes = likesMatch ? parseInt(likesMatch[1], 10) : 0
+    const videos = videoMatch ? parseInt(videoMatch[1], 10) : 0
+
+    // Engagement estimate: (likes / videos) / followers * 100
+    const engagement = followers > 0 && videos > 0
+      ? Math.min(Math.round((likes / videos / followers) * 100), 100)
+      : 0
+
+    return { followers, growth: 0, engagement }
+  } catch {
+    return { followers: 0, growth: 0, engagement: 0 }
   }
 }
 
-/** Fetch GitHub follower / star count (GitHub REST API). */
+/* ═══════════════════════════════════════════════════════════════════
+ * Facebook (public profile scraping — no API key needed)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+export async function fetchFacebookStats(): Promise<PlatformStats> {
+  try {
+    // Facebook heavily restricts scraping. Use the public share page
+    const res = await fetch('https://www.facebook.com/share/1GjxKY9X9n/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    })
+    const html = await res.text()
+
+    // Look for follower/like count in the page
+    const followerMatch = html.match(/(\d+(?:,\d+)*)\s*(?:likes|followers|people like this)/i)
+    const followers = followerMatch ? parseCompactNumber(followerMatch[1]) : 0
+
+    return { followers, growth: 0, engagement: 0 }
+  } catch {
+    return { followers: 0, growth: 0, engagement: 0 }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * GitHub (public API — no auth needed)
+ * ═══════════════════════════════════════════════════════════════════ */
+
 export async function fetchGitHubStats(): Promise<PlatformStats> {
-  // TODO: Replace with GitHub API call
-  // const res = await fetch(
-  //   `https://api.github.com/users/${GITHUB_USERNAME}`,
-  //   { headers: { Authorization: `token ${GITHUB_TOKEN}` } }
-  // )
-  // const json = await res.json()
-  // return { followers: json.followers, growth: ..., engagement: ... }
+  try {
+    const res = await fetch('https://api.github.com/users/Mr-Akhil12', {
+      headers: {
+        'User-Agent': 'Hermes-Mission-Control',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    })
 
-  return {
-    followers: 0,
-    growth: 0,
-    engagement: 0,
+    if (!res.ok) {
+      throw new Error(`GitHub API returned ${res.status}`)
+    }
+
+    const data = await res.json()
+    const followers = data.followers ?? 0
+    const publicRepos = data.public_repos ?? 0
+
+    // Engagement estimate based on repos vs followers ratio
+    const engagement = followers > 0
+      ? Math.min(Math.round((publicRepos / followers) * 100), 100)
+      : 0
+
+    return { followers, growth: 0, engagement }
+  } catch {
+    return { followers: 0, growth: 0, engagement: 0 }
   }
 }
 
-/** Fetch Vercel website visit stats (Vercel Analytics API). */
-export async function fetchWebsiteStats(): Promise<PlatformStats> {
-  // TODO: Replace with Vercel Analytics API call
-  // const res = await fetch(
-  //   `https://api.vercel.com/v1/analytics/...`,
-  //   { headers: { Authorization: `Bearer ${VERCEL_TOKEN}` } }
-  // )
+/* ═══════════════════════════════════════════════════════════════════
+ * Website (blog post count as proxy for site activity)
+ * ═══════════════════════════════════════════════════════════════════ */
 
-  return {
-    followers: 0,
-    growth: 0,
-    engagement: 0,
+export async function fetchWebsiteStats(): Promise<PlatformStats> {
+  try {
+    // Count blog posts on agenticbiz as a proxy for website activity
+    const res = await fetch('https://agenticbiz.co.za/blog', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    })
+    const html = await res.text()
+
+    // Count blog post links/entries
+    const postMatches = html.match(/blog\/[a-z0-9-]+/gi) ?? []
+    const postCount = new Set(postMatches).size
+
+    // Use post count as "followers" proxy (activity metric)
+    return {
+      followers: postCount,
+      growth: 0,
+      engagement: 0,
+    }
+  } catch {
+    return { followers: 0, growth: 0, engagement: 0 }
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * Helpers
+ * ═══════════════════════════════════════════════════════════════════ */
+
+function parseCompactNumber(s: string): number {
+  s = s.replace(/,/g, '').trim()
+  const match = s.match(/^(\d+(?:\.\d+)?)\s*([KMB])?$/i)
+  if (!match) return parseInt(s, 10) || 0
+  const num = parseFloat(match[1])
+  const suffix = match[2]?.toUpperCase()
+  if (suffix === 'K') return Math.round(num * 1000)
+  if (suffix === 'M') return Math.round(num * 1000000)
+  if (suffix === 'B') return Math.round(num * 1000000000)
+  return Math.round(num)
 }
 
 /**
  * Fetch all platform stats concurrently.
- * Returns a SocialMetrics object with current metrics from each platform.
  */
 export async function fetchAllSocialMetrics(): Promise<SocialMetrics> {
-  const [youtube, twitter, discord, github, website] = await Promise.all([
+  const [youtube, twitter, tiktok, facebook, github, website] = await Promise.all([
     fetchYouTubeStats(),
     fetchTwitterStats(),
-    fetchDiscordStats(),
+    fetchTikTokStats(),
+    fetchFacebookStats(),
     fetchGitHubStats(),
     fetchWebsiteStats(),
   ])
 
-  return { youtube, twitter, discord, github, website }
+  return { youtube, twitter, tiktok, facebook, github, website }
 }
