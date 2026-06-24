@@ -49,24 +49,32 @@ export async function fetchYouTubeStats(): Promise<PlatformStats> {
 
 export async function fetchTwitterStats(): Promise<PlatformStats> {
   try {
-    // Scrape public X profile page for follower count
-    const res = await fetch('https://x.com/ThatITDudee', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    })
-    const html = await res.text()
-
-    // Extract follower count from the page
-    // X uses "followers" in the meta og:description or in the title
-    const followerMatch = html.match(/(\d+(?:,\d+)*(?:\.\d+)?[KMB]?)\s*Followers/i)
-    const followers = followerMatch ? parseCompactNumber(followerMatch[1]) : 0
-
-    return {
-      followers,
-      growth: 0, // Would need historical data to calculate
-      engagement: 0, // Would need tweet interaction data
+    // Use nitter RSS as fallback for public Twitter profiles
+    // Nitter instances come and go; try multiple
+    const nitterInstances = ['https://nitter.privacydev.net', 'https://nitter.poast.org']
+    for (const instance of nitterInstances) {
+      try {
+        const res = await fetch(`${instance}/ThatITDudee`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(8000),
+        })
+        const html = await res.text()
+        // Look for follower count in the profile stats
+        const followerMatch = html.match(/(\d+(?:,\d+)*)\s*Followers/i)
+        if (followerMatch) {
+          return {
+            followers: parseCompactNumber(followerMatch[1]),
+            growth: 0,
+            engagement: 0,
+          }
+        }
+      } catch {
+        continue
+      }
     }
+    return { followers: 0, growth: 0, engagement: 0 }
   } catch {
     return { followers: 0, growth: 0, engagement: 0 }
   }
@@ -78,31 +86,40 @@ export async function fetchTwitterStats(): Promise<PlatformStats> {
 
 export async function fetchTikTokStats(): Promise<PlatformStats> {
   try {
+    // TikTok SSR data is in __UNIVERSAL_DATA_FOR_REHYDRATION__ script tag
     const res = await fetch('https://www.tiktok.com/@that_it_dude', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
       },
+      signal: AbortSignal.timeout(10000),
     })
     const html = await res.text()
 
-    // Extract follower count from TikTok profile
-    // TikTok renders client-side, so we look for SSR data in JSON
-    const followerMatch = html.match(/"followerCount"\s*:\s*(\d+)/)
+    // Try to find SSR JSON data
+    const ssrMatch = html.match(/"followerCount"\s*:\s*(\d+)/)
     const followingMatch = html.match(/"followingCount"\s*:\s*(\d+)/)
     const likesMatch = html.match(/"heartCount"\s*:\s*(\d+)/)
     const videoMatch = html.match(/"videoCount"\s*:\s*(\d+)/)
 
-    const followers = followerMatch ? parseInt(followerMatch[1], 10) : 0
-    const following = followingMatch ? parseInt(followingMatch[1], 10) : 0
-    const likes = likesMatch ? parseInt(likesMatch[1], 10) : 0
-    const videos = videoMatch ? parseInt(videoMatch[1], 10) : 0
+    if (ssrMatch) {
+      const followers = parseInt(ssrMatch[1], 10)
+      const following = followingMatch ? parseInt(followingMatch[1], 10) : 0
+      const likes = likesMatch ? parseInt(likesMatch[1], 10) : 0
+      const videos = videoMatch ? parseInt(videoMatch[1], 10) : 0
+      const engagement = followers > 0 && videos > 0
+        ? Math.min(Math.round((likes / videos / followers) * 100), 100)
+        : 0
+      return { followers, growth: 0, engagement }
+    }
 
-    // Engagement estimate: (likes / videos) / followers * 100
-    const engagement = followers > 0 && videos > 0
-      ? Math.min(Math.round((likes / videos / followers) * 100), 100)
-      : 0
+    // Fallback: try another pattern
+    const altMatch = html.match(/user.*?follower.*?(\d+)/i)
+    if (altMatch) {
+      return { followers: parseInt(altMatch[1], 10), growth: 0, engagement: 0 }
+    }
 
-    return { followers, growth: 0, engagement }
+    return { followers: 0, growth: 0, engagement: 0 }
   } catch {
     return { followers: 0, growth: 0, engagement: 0 }
   }
@@ -114,20 +131,31 @@ export async function fetchTikTokStats(): Promise<PlatformStats> {
 
 export async function fetchFacebookStats(): Promise<PlatformStats> {
   try {
-    // Facebook heavily restricts scraping. Use the public share page
-    const res = await fetch('https://www.facebook.com/share/1GjxKY9X9n/', {
+    // Facebook public profile scraping via mobile endpoint (more permissive)
+    const res = await fetch('https://m.facebook.com/share/1GjxKY9X9n/', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'Accept-Language': 'en-US,en;q=0.9',
       },
+      signal: AbortSignal.timeout(10000),
     })
     const html = await res.text()
 
-    // Look for follower/like count in the page
-    const followerMatch = html.match(/(\d+(?:,\d+)*)\s*(?:likes|followers|people like this)/i)
-    const followers = followerMatch ? parseCompactNumber(followerMatch[1]) : 0
+    // Look for follower/like count patterns
+    const patterns = [
+      /(\d+(?:,\d+)*)\s*likes/i,
+      /(\d+(?:,\d+)*)\s*followers/i,
+      /(\d+(?:,\d+)*)\s*people like this/i,
+      /"followerCount"\s*:\s*(\d+)/,
+    ]
+    for (const pattern of patterns) {
+      const match = html.match(pattern)
+      if (match) {
+        return { followers: parseCompactNumber(match[1]), growth: 0, engagement: 0 }
+      }
+    }
 
-    return { followers, growth: 0, engagement: 0 }
+    return { followers: 0, growth: 0, engagement: 0 }
   } catch {
     return { followers: 0, growth: 0, engagement: 0 }
   }
