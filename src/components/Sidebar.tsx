@@ -5,10 +5,9 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Activity, Kanban, Clock, Cpu,
   FileText, Settings, KeyRound, BookOpen, Zap,
-  X, ChevronRight, MessageSquare, TrendingUp,
+  ChevronRight, MessageSquare, TrendingUp,
   DollarSign, Sparkles, Gamepad2, Shield
 } from 'lucide-react'
-import { useState } from 'react'
 import Image from 'next/image'
 
 const dashboardTabs = [
@@ -37,7 +36,6 @@ const systemTabs = [
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
 
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/'
@@ -87,71 +85,48 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* ─── Mobile Header ─── */}
-      <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-16 py-[5px] bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="flex items-center gap-2.5">
-          <Image src="/logo.png" alt="Hermes" width={42} height={42} sizes="42px" priority className="rounded-xl" />
+      {/* ─── Mobile Header + Pill Nav (permanent) ─── */}
+      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)]">
+        {/* Row 1: Brand */}
+        <div className="h-14 flex items-center px-4 gap-2.5">
+          <Image src="/logo.png" alt="Hermes" width={38} height={38} sizes="38px" priority className="rounded-xl" />
           <div>
             <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
             <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
           </div>
-        </button>
-        {mobileOpen && (
-          <button
-            onClick={() => setMobileOpen(false)}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/20"
-          >
-            <X className="w-4 h-4 text-white" />
-          </button>
-        )}
-      </header>
-
-      {/* ─── Mobile Pill Navigation ─── */}
-      {mobileOpen && (
-        <div className="fixed top-16 left-0 right-0 z-40 md:hidden py-2 px-4
-          bg-gradient-to-br from-[rgba(79,143,255,0.85)] to-[rgba(168,85,247,0.85)] backdrop-blur-md text-white
-          rounded-b-2xl shadow-lg animate-slide-down">
-          <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
-            {dashboardTabs.map(tab => {
-              const active = isActive(tab.path)
-              return (
-                <Link
-                  key={tab.id}
-                  href={tab.path}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex-shrink-0 rounded-full px-4 py-2 text-sm transition-all whitespace-nowrap
-                    ${active
-                      ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                    }`}
-                >
-                  {tab.label}
-                </Link>
-              )
-            })}
-          </div>
-          <div className="border-t border-white/20 my-2" />
-          <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
-            {systemTabs.map(tab => {
-              const active = isActive(tab.path)
-              return (
-                <Link
-                  key={tab.id}
-                  href={tab.path}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex-shrink-0 rounded-full px-4 py-2 text-sm transition-all whitespace-nowrap
-                    ${active
-                      ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                    }`}
-                >
-                  {tab.label}
-                </Link>
-              )
-            })}
-          </div>
         </div>
-      )}
+
+        {/* Row 2: Horizontal scrollable pills — all tabs + | + system */}
+        <div className="flex overflow-x-auto scrollbar-hide items-center px-4 pb-2.5 -mt-0.5">
+          {dashboardTabs.map((tab, i) => (
+            <Link
+              key={tab.id}
+              href={tab.path}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[12px] transition-all whitespace-nowrap
+                ${isActive(tab.path)
+                  ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
+                }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+          <span className="flex-shrink-0 mx-1.5 text-[var(--text-muted)] text-[12px] select-none">|</span>
+          {systemTabs.map((tab) => (
+            <Link
+              key={tab.id}
+              href={tab.path}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[12px] transition-all whitespace-nowrap
+                ${isActive(tab.path)
+                  ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
+                }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+      </div>
 
       {/* ─── Desktop Sidebar ─── */}
       <aside className="fixed left-0 top-0 bottom-0 z-30 w-[220px] bg-[var(--bg-secondary)]/95 backdrop-blur-xl border-r border-[var(--border)] hidden md:flex flex-col">

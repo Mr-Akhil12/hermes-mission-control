@@ -48,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ParticleBackground />
         <div className="relative" style={{ zIndex: 1 }}>
           <Sidebar />
-          <main className="min-h-screen h-screen overflow-y-auto overflow-x-hidden pt-16 md:pt-0 md:ml-[220px]">
+          <main className="min-h-screen h-screen overflow-y-auto overflow-x-hidden pt-[100px] md:pt-0 md:ml-[220px]">
             <div className="p-4 md:p-6 lg:p-8 max-w-[1400px]">
               {children}
             </div>
