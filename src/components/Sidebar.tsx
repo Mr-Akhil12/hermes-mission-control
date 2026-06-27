@@ -44,7 +44,7 @@ export default function Sidebar() {
     return pathname.startsWith(path)
   }
 
-  const renderNavItem = (tab: typeof dashboardTabs[0], onClick?: () => void, isMobile = false) => {
+  const renderNavItem = (tab: typeof dashboardTabs[0], onClick?: () => void) => {
     const Icon = tab.icon
     const active = isActive(tab.path)
     const hasSubTabs = 'subTabs' in tab && tab.subTabs
@@ -55,13 +55,13 @@ export default function Sidebar() {
           onClick={onClick}
           className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-xl text-[13px] transition-all ${
             active
-              ? isMobile ? 'bg-white/15 text-white font-medium' : 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
-              : isMobile ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
+              ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
           }`}
         >
           <Icon className="w-4 h-4 flex-shrink-0" />
           <span>{tab.label}</span>
-          {active && <div className={`ml-auto w-1.5 h-1.5 rounded-full ${isMobile ? 'bg-white' : 'bg-[var(--accent)]'}`} />}
+          {active && <div className={`ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]`} />}
         </Link>
         {hasSubTabs && active && (
           <div className="ml-6 mt-1 space-y-0.5">
@@ -72,8 +72,8 @@ export default function Sidebar() {
                 onClick={onClick}
                 className={`block px-3 py-1.5 rounded-lg text-[11px] transition-all ${
                   pathname === sub.path
-                    ? isMobile ? 'text-white font-medium bg-white/10' : 'text-[var(--accent)] font-medium bg-[var(--accent)]/5'
-                    : isMobile ? 'text-white/60 hover:text-white/80' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    ? 'text-[var(--accent)] font-medium bg-[var(--accent)]/5'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
               >
                 {sub.label}
@@ -96,50 +96,59 @@ export default function Sidebar() {
             <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
           </div>
         </button>
+        {mobileOpen && (
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/20"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+        )}
       </header>
 
-      {/* ─── Mobile Fullscreen Overlay ─── */}
+      {/* ─── Mobile Pill Navigation ─── */}
       {mobileOpen && (
-        <div className="fixed top-16 right-3 bottom-3 w-[280px] z-[100] md:hidden rounded-xl shadow-lg flex flex-col
-          bg-gradient-to-br from-[rgba(79,143,255,0.85)] to-[rgba(168,85,247,0.85)] backdrop-blur-md text-white animate-slide-in-right">
-          {/* Close Button / Drag Handle */}
-          <div className="flex justify-end p-3 flex-shrink-0">
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/20"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        <div className="fixed top-16 left-0 right-0 z-40 md:hidden py-2 px-4
+          bg-gradient-to-br from-[rgba(79,143,255,0.85)] to-[rgba(168,85,247,0.85)] backdrop-blur-md text-white
+          rounded-b-2xl shadow-lg animate-slide-down">
+          <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
+            {dashboardTabs.map(tab => {
+              const active = isActive(tab.path)
+              return (
+                <Link
+                  key={tab.id}
+                  href={tab.path}
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex-shrink-0 rounded-full px-4 py-2 text-sm transition-all whitespace-nowrap
+                    ${active
+                      ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                    }`}
+                >
+                  {tab.label}
+                </Link>
+              )
+            })}
           </div>
-
-          {/* Nav Content */}
-          <div className="flex-1 overflow-y-auto px-5 py-2 space-y-6">
-            {/* Dashboard Section */}
-            <div>
-              <p className="px-3 mb-3 text-[11px] uppercase tracking-widest font-medium text-white/70">Dashboard</p>
-              <div className="space-y-1">
-                {dashboardTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false), true))}
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-white/20" />
-
-            {/* System Section */}
-            <div>
-              <p className="px-3 mb-3 text-[11px] uppercase tracking-widest font-medium text-white/70">System</p>
-              <div className="space-y-1">
-                {systemTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false), true))}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Status */}
-          <div className="px-5 py-4 border-t border-white/20 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--success)] pulse-dot" />
-              <span className="text-[11px] text-white/70">All systems operational</span>
-            </div>
+          <div className="border-t border-white/20 my-2" />
+          <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
+            {systemTabs.map(tab => {
+              const active = isActive(tab.path)
+              return (
+                <Link
+                  key={tab.id}
+                  href={tab.path}
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex-shrink-0 rounded-full px-4 py-2 text-sm transition-all whitespace-nowrap
+                    ${active
+                      ? 'bg-gradient-to-r from-[#4f8fff] to-[#a855f7] font-medium text-white shadow-md'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                    }`}
+                >
+                  {tab.label}
+                </Link>
+              )
+            })}
           </div>
         </div>
       )}
