@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, Target, Shield, RefreshCw, Play, Square, ArrowUpRight, ArrowDownRight, Activity, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, Target, Shield, RefreshCw, Play, Square, ArrowUpRight, ArrowDownRight, Activity, Zap, BookOpen, Trophy, TrendingUp as TrendingUpIcon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 
@@ -27,6 +27,28 @@ interface PriceData {
   volume: number;
 }
 
+interface SupabaseTrade {
+  id: string;
+  date: string;
+  direction: string;
+  entry: number;
+  sl: number;
+  tp: number;
+  result: string;
+  rr: number;
+  notes: string | null;
+  created_at: string;
+  actual_pnl?: number | null;
+}
+
+interface TradingPerformance {
+  totalTrades: number;
+  winRate: number;
+  avgRR: number;
+  profitFactor: number;
+  maxDrawdown: number;
+}
+
 export default function TradingPage() {
   const [price, setPrice] = useState(4221.20);
   const [priceHistory, setPriceHistory] = useState<PriceData[]>([]);
@@ -40,6 +62,9 @@ export default function TradingPage() {
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
   const [lotSize, setLotSize] = useState('0.1');
+  const [journalTrades, setJournalTrades] = useState<SupabaseTrade[]>([]);
+  const [journalPerformance, setJournalPerformance] = useState<TradingPerformance | null>(null);
+  const [journalLoading, setJournalLoading] = useState(true);
 
   // Fetch XAUUSD data
   const fetchPrice = useCallback(async () => {
@@ -82,6 +107,30 @@ export default function TradingPage() {
     setOpenPnL(Math.round(pnl * 100) / 100);
     setEquity(Math.round((balance + pnl) * 100) / 100);
   }, [price, trades, balance]);
+
+  // Fetch trade journal from Supabase
+  useEffect(() => {
+    const fetchJournal = async () => {
+      try {
+        const resp = await fetch('/api/trading');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.tableExists && data.trades) {
+            const sorted = [...data.trades].sort((a, b) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            setJournalTrades(sorted);
+            if (data.performance) setJournalPerformance(data.performance);
+          }
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setJournalLoading(false);
+      }
+    };
+    fetchJournal();
+  }, []);
 
   const openTrade = () => {
     if (!stopLoss || !takeProfit) {
@@ -337,6 +386,135 @@ export default function TradingPage() {
           </div>
         </div>
       )}
+
+      {/* Trade Journal (from Supabase) */}
+      <div className="glass-strong rounded-2xl p-6">
+        <h3 className="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-[var(--accent)]" />
+          Trade Journal
+          {journalTrades.length > 0 && (
+            <span className="text-[10px] text-[var(--text-muted)] font-normal ml-auto">
+              {journalTrades.length} trade{journalTrades.length > 1 ? 's' : ''} logged
+            </span>
+          )}
+        </h3>
+
+        {journalLoading ? (
+          <div className="text-center py-8 text-[var(--text-muted)] text-xs">Loading journal...</div>
+        ) : journalTrades.length === 0 ? (
+          <div className="text-center py-8 text-[var(--text-muted)] text-xs">
+            No trades logged yet. Your journal entries will appear here.
+          </div>
+        ) : (
+          <>
+            {/* Performance Summary */}
+            {journalPerformance && journalPerformance.totalTrades > 0 && (
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                <div className="glass rounded-xl p-3 text-center">
+                  <div className="text-lg font-bold text-[var(--accent)]">{journalPerformance.totalTrades}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Trades</div>
+                </div>
+                <div className="glass rounded-xl p-3 text-center">
+                  <div className={`text-lg font-bold ${journalPerformance.winRate >= 50 ? 'text-[var(--success)]' : 'text-[var(--warning)]'}`}>
+                    {journalPerformance.winRate.toFixed(0)}%
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Win Rate</div>
+                </div>
+                <div className="glass rounded-xl p-3 text-center">
+                  <div className="text-lg font-bold text-text-primary">{journalPerformance.avgRR.toFixed(1)}R</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Avg RR</div>
+                </div>
+              </div>
+            )}
+
+            {/* Journal Entries */}
+            <div className="space-y-3 max-h-[500px] overflow-y-auto">
+              {journalTrades.map(trade => {
+                const dateObj = new Date(trade.created_at || trade.date);
+                const dateStr = dateObj.toLocaleDateString('en-ZA', {
+                  weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+                });
+                const timeStr = dateObj.toLocaleTimeString('en-ZA', {
+                  hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg'
+                });
+
+                const resultColors: Record<string, string> = {
+                  'WIN': 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20',
+                  'LOSS': 'bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20',
+                  'BREAKEVEN': 'bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20',
+                  'PENDING': 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-[var(--text-muted)]/20',
+                };
+
+                const pnlRisk = Math.abs(trade.entry - trade.sl);
+                const pnlAmount = trade.actual_pnl !== undefined && trade.actual_pnl !== null
+                  ? `${trade.actual_pnl >= 0 ? '+' : ''}R${trade.actual_pnl.toFixed(0)}`
+                  : trade.result === 'WIN'
+                  ? `+R${(pnlRisk * trade.rr).toFixed(0)}`
+                  : trade.result === 'LOSS'
+                  ? `-R${pnlRisk.toFixed(0)}`
+                  : trade.result === 'BREAKEVEN'
+                  ? '±R0'
+                  : '—';
+
+                const pnlTextColor = trade.actual_pnl !== undefined && trade.actual_pnl !== null
+                  ? trade.actual_pnl > 0
+                    ? 'text-[var(--success)]'
+                    : trade.actual_pnl < 0
+                    ? 'text-[var(--danger)]'
+                    : 'text-[var(--warning)]'
+                  : trade.result === 'WIN'
+                  ? 'text-[var(--success)]'
+                  : trade.result === 'LOSS'
+                  ? 'text-[var(--danger)]'
+                  : 'text-[var(--warning)]';
+
+                return (
+                  <div key={trade.id} className="p-4 rounded-xl glass border border-border hover:border-accent/20 transition-all">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={trade.direction === 'BUY' ? 'success' : 'danger'} size="sm">
+                          {trade.direction}
+                        </Badge>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${resultColors[trade.result] || resultColors['PENDING']}`}>
+                          {trade.result}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{trade.rr}R</span>
+                      </div>
+                      <span className={`text-sm font-bold ${pnlTextColor}`}>
+                        {pnlAmount}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                      <div>
+                        <div className="text-[9px] text-[var(--text-muted)] uppercase">Entry</div>
+                        <div className="text-xs text-text-primary font-mono">R{trade.entry}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[var(--text-muted)] uppercase">SL</div>
+                        <div className="text-xs text-[var(--danger)] font-mono">R{trade.sl}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[var(--text-muted)] uppercase">TP</div>
+                        <div className="text-xs text-[var(--success)] font-mono">R{trade.tp}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[var(--text-muted)] uppercase">Date</div>
+                        <div className="text-xs text-text-primary">{dateStr}</div>
+                      </div>
+                    </div>
+                    {trade.notes && (
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-2 leading-relaxed border-t border-border pt-2">
+                        {trade.notes}
+                      </p>
+                    )}
+                    <div className="text-[9px] text-[var(--text-muted)] mt-1">{timeStr} SAST</div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Connection Status */}
       <div className="glass rounded-xl p-4 flex items-center justify-between">

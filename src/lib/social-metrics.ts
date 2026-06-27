@@ -48,33 +48,39 @@ export async function fetchYouTubeStats(): Promise<PlatformStats> {
  * ═══════════════════════════════════════════════════════════════════ */
 
 export async function fetchTwitterStats(): Promise<PlatformStats> {
-  try {
-    // Use nitter RSS as fallback for public Twitter profiles
-    // Nitter instances come and go; try multiple
-    const nitterInstances = ['https://nitter.privacydev.net', 'https://nitter.poast.org']
-    for (const instance of nitterInstances) {
-      try {
-        const res = await fetch(`${instance}/ThatITDudee`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-          signal: AbortSignal.timeout(8000),
-        })
-        const html = await res.text()
-        // Look for follower count in the profile stats
-        const followerMatch = html.match(/(\d+(?:,\d+)*)\s*Followers/i)
-        if (followerMatch) {
-          return {
-            followers: parseCompactNumber(followerMatch[1]),
-            growth: 0,
-            engagement: 0,
-          }
-        }
-      } catch {
-        continue
-      }
-    }
+  // Twitter/X requires API auth (free tier: 1500 reads/month via Bearer Token)
+  // Set TWITTER_BEARER_TOKEN in .env to enable live data
+  // Without token, returns 0 (update manually via Hermes skill)
+
+  const bearerToken = process.env.TWITTER_BEARER_TOKEN
+  if (!bearerToken) {
     return { followers: 0, growth: 0, engagement: 0 }
+  }
+
+  try {
+    const res = await fetch(
+      'https://api.twitter.com/2/users/by/username/ThatITDudee?user.fields=public_metrics',
+      {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          'User-Agent': 'Hermes-Mission-Control',
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+
+    if (!res.ok) {
+      throw new Error(`Twitter API returned ${res.status}`)
+    }
+
+    const json = await res.json()
+    const metrics = json.data?.public_metrics
+
+    return {
+      followers: metrics?.followers_count ?? 0,
+      growth: 0, // Would need historical data
+      engagement: 0, // Would need tweet interaction data
+    }
   } catch {
     return { followers: 0, growth: 0, engagement: 0 }
   }
@@ -85,8 +91,8 @@ export async function fetchTwitterStats(): Promise<PlatformStats> {
  * ═══════════════════════════════════════════════════════════════════ */
 
 export async function fetchTikTokStats(): Promise<PlatformStats> {
+  // TikTok SSR data extraction (works without auth for public profiles)
   try {
-    // TikTok SSR data is in __UNIVERSAL_DATA_FOR_REHYDRATION__ script tag
     const res = await fetch('https://www.tiktok.com/@that_it_dude', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -96,7 +102,7 @@ export async function fetchTikTokStats(): Promise<PlatformStats> {
     })
     const html = await res.text()
 
-    // Try to find SSR JSON data
+    // Extract from __UNIVERSAL_DATA_FOR_REHYDRATION__ SSR JSON
     const ssrMatch = html.match(/"followerCount"\s*:\s*(\d+)/)
     const followingMatch = html.match(/"followingCount"\s*:\s*(\d+)/)
     const likesMatch = html.match(/"heartCount"\s*:\s*(\d+)/)
@@ -104,19 +110,12 @@ export async function fetchTikTokStats(): Promise<PlatformStats> {
 
     if (ssrMatch) {
       const followers = parseInt(ssrMatch[1], 10)
-      const following = followingMatch ? parseInt(followingMatch[1], 10) : 0
       const likes = likesMatch ? parseInt(likesMatch[1], 10) : 0
       const videos = videoMatch ? parseInt(videoMatch[1], 10) : 0
       const engagement = followers > 0 && videos > 0
         ? Math.min(Math.round((likes / videos / followers) * 100), 100)
         : 0
       return { followers, growth: 0, engagement }
-    }
-
-    // Fallback: try another pattern
-    const altMatch = html.match(/user.*?follower.*?(\d+)/i)
-    if (altMatch) {
-      return { followers: parseInt(altMatch[1], 10), growth: 0, engagement: 0 }
     }
 
     return { followers: 0, growth: 0, engagement: 0 }

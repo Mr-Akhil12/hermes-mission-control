@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Activity, Kanban, Clock, Cpu,
   FileText, Settings, KeyRound, BookOpen, Zap,
-  Menu, X, ChevronRight, MessageSquare, TrendingUp,
+  X, ChevronRight, MessageSquare, TrendingUp,
   DollarSign, Sparkles, Gamepad2, Shield
 } from 'lucide-react'
 import { useState } from 'react'
@@ -44,7 +44,7 @@ export default function Sidebar() {
     return pathname.startsWith(path)
   }
 
-  const renderNavItem = (tab: typeof dashboardTabs[0], onClick?: () => void) => {
+  const renderNavItem = (tab: typeof dashboardTabs[0], onClick?: () => void, isMobile = false) => {
     const Icon = tab.icon
     const active = isActive(tab.path)
     const hasSubTabs = 'subTabs' in tab && tab.subTabs
@@ -55,13 +55,13 @@ export default function Sidebar() {
           onClick={onClick}
           className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-xl text-[13px] transition-all ${
             active
-              ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
+              ? isMobile ? 'bg-white/15 text-white font-medium' : 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
+              : isMobile ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]'
           }`}
         >
           <Icon className="w-4 h-4 flex-shrink-0" />
           <span>{tab.label}</span>
-          {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+          {active && <div className={`ml-auto w-1.5 h-1.5 rounded-full ${isMobile ? 'bg-white' : 'bg-[var(--accent)]'}`} />}
         </Link>
         {hasSubTabs && active && (
           <div className="ml-6 mt-1 space-y-0.5">
@@ -72,8 +72,8 @@ export default function Sidebar() {
                 onClick={onClick}
                 className={`block px-3 py-1.5 rounded-lg text-[11px] transition-all ${
                   pathname === sub.path
-                    ? 'text-[var(--accent)] font-medium bg-[var(--accent)]/5'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    ? isMobile ? 'text-white font-medium bg-white/10' : 'text-[var(--accent)] font-medium bg-[var(--accent)]/5'
+                    : isMobile ? 'text-white/60 hover:text-white/80' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
               >
                 {sub.label}
@@ -89,84 +89,56 @@ export default function Sidebar() {
     <>
       {/* ─── Mobile Header ─── */}
       <header className="fixed top-0 left-0 right-0 z-50 md:hidden h-16 py-[5px] bg-[var(--bg-secondary)]/90 backdrop-blur-xl border-b border-[var(--border)] flex items-center justify-between px-4 gap-3">
-        <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileOpen(false)}>
+        <button onClick={() => setMobileOpen(!mobileOpen)} className="flex items-center gap-2.5">
           <Image src="/logo.png" alt="Hermes" width={42} height={42} sizes="42px" priority className="rounded-xl" />
           <div>
             <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
             <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
           </div>
-        </Link>
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
-          style={{
-            background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 50%, var(--pink) 100%)',
-          }}
-        >
-          <Menu className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
         </button>
       </header>
 
       {/* ─── Mobile Fullscreen Overlay ─── */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-[100] md:hidden">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
-          />
+        <div className="fixed top-16 right-3 bottom-3 w-[280px] z-[100] md:hidden rounded-xl shadow-lg flex flex-col
+          bg-gradient-to-br from-[rgba(79,143,255,0.85)] to-[rgba(168,85,247,0.85)] backdrop-blur-md text-white animate-slide-in-right">
+          {/* Close Button / Drag Handle */}
+          <div className="flex justify-end p-3 flex-shrink-0">
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/20"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-          {/* Fullscreen Menu */}
-          <div className="absolute inset-0 bg-[var(--bg-secondary)] flex flex-col animate-slide-up">
-            {/* Menu Header */}
-            <div className="flex items-center justify-between px-5 h-16 border-b border-[var(--border)] flex-shrink-0">
-              <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
-                <Image src="/logo.png" alt="Hermes" width={48} height={48} sizes="48px" priority className="rounded-xl" />
-                <div>
-                  <span className="text-sm font-bold tracking-tight block leading-none">Hermes OS</span>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest leading-none mt-[2px] block">Mission Control</span>
-                </div>
-              </Link>
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all group"
-                style={{
-                  background: 'linear-gradient(135deg, var(--danger) 0%, var(--pink) 100%)',
-                  boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)',
-                }}
-              >
-                <X className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
-              </button>
-            </div>
-
-            {/* Nav Content */}
-            <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
-              {/* Dashboard Section */}
-              <div>
-                <p className="px-3 mb-3 text-[11px] uppercase tracking-widest text-[var(--text-muted)] font-medium">Dashboard</p>
-                <div className="space-y-1">
-                  {dashboardTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false)))}
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-[var(--border)]" />
-
-              {/* System Section */}
-              <div>
-                <p className="px-3 mb-3 text-[11px] uppercase tracking-widest text-[var(--text-muted)] font-medium">System</p>
-                <div className="space-y-1">
-                  {systemTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false)))}
-                </div>
+          {/* Nav Content */}
+          <div className="flex-1 overflow-y-auto px-5 py-2 space-y-6">
+            {/* Dashboard Section */}
+            <div>
+              <p className="px-3 mb-3 text-[11px] uppercase tracking-widest font-medium text-white/70">Dashboard</p>
+              <div className="space-y-1">
+                {dashboardTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false), true))}
               </div>
             </div>
 
-            {/* Bottom Status */}
-            <div className="px-5 py-4 border-t border-[var(--border)] flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[var(--success)] pulse-dot text-[var(--success)]" />
-                <span className="text-[11px] text-[var(--text-muted)]">All systems operational</span>
+            {/* Divider */}
+            <div className="border-t border-white/20" />
+
+            {/* System Section */}
+            <div>
+              <p className="px-3 mb-3 text-[11px] uppercase tracking-widest font-medium text-white/70">System</p>
+              <div className="space-y-1">
+                {systemTabs.map(tab => renderNavItem(tab, () => setMobileOpen(false), true))}
               </div>
+            </div>
+          </div>
+
+          {/* Bottom Status */}
+          <div className="px-5 py-4 border-t border-white/20 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[var(--success)] pulse-dot" />
+              <span className="text-[11px] text-white/70">All systems operational</span>
             </div>
           </div>
         </div>
